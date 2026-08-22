@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Organization OS · MVP</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    body { margin: 0; background: radial-gradient(circle at top right, #1e3a5f, #0f172a 42%); min-height: 100vh; }
+    main { max-width: 1120px; margin: auto; padding: 36px 20px 80px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 48px); } p { color: #94a3b8; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 28px; }
+    .card { background: rgba(15, 23, 42, .72); border: 1px solid #334155; border-radius: 16px; padding: 18px; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+    .wide { grid-column: 1 / -1; } h2 { margin-top: 0; font-size: 18px; }
+    input, textarea, button { font: inherit; border-radius: 10px; border: 1px solid #475569; padding: 10px 12px; box-sizing: border-box; }
+    input, textarea { width: 100%; background: #111c31; color: #e2e8f0; margin: 6px 0 10px; } textarea { min-height: 90px; resize: vertical; }
+    button { cursor: pointer; color: white; background: #2563eb; border: 0; } button:hover { background: #3b82f6; }
+    .stat { font-size: 30px; color: #93c5fd; } .muted { font-size: 13px; color: #94a3b8; }
+    pre { overflow: auto; background: #020617; padding: 12px; border-radius: 10px; font-size: 12px; max-height: 300px; }
+    .row { display: flex; gap: 8px; align-items: center; } .row > * { flex: 1; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AI Organization OS</h1>
+    <p>MVP console: goals → task plans → agent execution → memory capture → tool calls.</p>
+    <section class="grid">
+      <div class="card"><div id="agentCount" class="stat">–</div><div class="muted">Agents</div></div>
+      <div class="card"><div id="goalCount" class="stat">–</div><div class="muted">Goals</div></div>
+      <div class="card"><div id="taskCount" class="stat">–</div><div class="muted">Tasks</div></div>
+      <div class="card"><div id="memoryCount" class="stat">–</div><div class="muted">Memories</div></div>
+      <div class="card">
+        <h2>Create a goal</h2>
+        <input id="goalTitle" placeholder="Example: Validate the AI Organization OS MVP" />
+        <textarea id="goalDescription" placeholder="Describe the goal, scope, and success criteria"></textarea>
+        <button onclick="createGoal()">Create and generate plan</button>
+      </div>
+      <div class="card">
+        <h2>Write organization memory</h2>
+        <textarea id="memoryContent" placeholder="Record a durable decision or fact"></textarea>
+        <button onclick="writeMemory()">Save memory</button>
+      </div>
+      <div class="card wide">
+        <h2>Runtime status</h2>
+        <div class="row"><button onclick="refresh()">Refresh</button><span id="message" class="muted">The scheduler checks for executable tasks every second</span></div>
+        <pre id="output">Loading…</pre>
+      </div>
+    </section>
+  </main>
+  <script>
+    const api = async (url, options) => { const response = await fetch(url, { headers: { 'content-type': 'application/json' }, ...options }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed'); return data; };
+    async function refresh() { const [agents, goals, tasks, memories] = await Promise.all(['/api/agents','/api/goals','/api/tasks','/api/memories'].map(api)); document.querySelector('#agentCount').textContent = agents.length; document.querySelector('#goalCount').textContent = goals.length; document.querySelector('#taskCount').textContent = tasks.length; document.querySelector('#memoryCount').textContent = memories.length; document.querySelector('#output').textContent = JSON.stringify({ agents, goals, tasks, memories }, null, 2); }
+    async function createGoal() { try { const goal = await api('/api/goals', { method: 'POST', body: JSON.stringify({ title: document.querySelector('#goalTitle').value, description: document.querySelector('#goalDescription').value }) }); await api(`/api/goals/${goal.id}/plan`, { method: 'POST' }); document.querySelector('#message').textContent = 'Goal created and task plan generated'; await refresh(); } catch (error) { document.querySelector('#message').textContent = error.message; } }
+    async function writeMemory() { try { await api('/api/memories', { method: 'POST', body: JSON.stringify({ content: document.querySelector('#memoryContent').value, tags: ['manual'] }) }); document.querySelector('#memoryContent').value = ''; document.querySelector('#message').textContent = 'Memory saved'; await refresh(); } catch (error) { document.querySelector('#message').textContent = error.message; } }
+    refresh(); setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

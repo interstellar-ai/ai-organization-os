@@ -1,0 +1,12 @@
+{
+  "name": "ai-organization-os-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A dependency-free MVP for managing AI agents, goals, tasks, memories and tools.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  }
+}
