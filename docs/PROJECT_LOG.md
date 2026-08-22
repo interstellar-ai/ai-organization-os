@@ -12,6 +12,15 @@ This file records dated implementation facts and decisions. Stable product defin
 - Removed personal identity, local machine paths, and runtime state from public project files.
 - Added `AGENTS.md` with coding, privacy, testing, and upload rules.
 
+## 2026-08-22 — Evidence-backed execution layer
+
+- Replaced the generic placeholder completion path for planned tasks with five allowlisted local tools: goal analysis, workflow design, MVP inspection, workflow validation, and iteration recording.
+- Added task acceptance criteria, executor names, attempts, evidence, blocked reasons, and plan cycles.
+- Added goal execution states: `not_started`, `in_progress`, `blocked`, and `awaiting_review`.
+- Added goal summaries, replan support, audit events, and a dashboard view that renders task evidence instead of only raw JSON.
+- Migrated legacy placeholder completions to `blocked` with an explicit rerun explanation.
+- End-to-end verification produced five completed tasks with evidence and left the goal in `awaiting_review`.
+
 ## Architecture snapshot
 
 ```text
@@ -38,7 +47,7 @@ The five-stage planner makes the workflow visible before adding model variabilit
 
 ### Placeholder execution is not business execution
 
-Tasks without a registered tool currently receive a placeholder completion message. This is acceptable for scheduler tests only. Real research, publishing, and revenue actions require registered tools, outputs, evidence, and approval boundaries.
+Legacy tasks without a registered tool may contain a placeholder completion message, but the migration layer now marks them as blocked. New custom tasks without an executor are blocked immediately. Real research, publishing, and revenue actions require registered tools, outputs, evidence, and approval boundaries.
 
 ## Verification record
 

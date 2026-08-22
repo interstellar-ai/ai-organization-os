@@ -19,7 +19,7 @@ This file is the short operating contract for coding agents working in this repo
 1. Keep public-facing UI, documentation, comments, and commit messages in English.
 2. Never commit API keys, access tokens, cookies, personal email addresses, local filesystem paths, machine names, or private user data.
 3. Keep runtime state out of Git. `data/state.json` is local-only and is ignored by `.gitignore`.
-4. A task may be marked `completed` only when its executor produces an output or evidence. The default runner is a test placeholder and must not be presented as real business execution.
+4. A task may be marked `completed` only when its executor produces an output and evidence. Planned tasks use deterministic local tools; custom tasks without an executor must remain blocked.
 5. External or high-impact actions require an explicit tool, scoped permissions, an audit record, and human approval where appropriate.
 6. Preserve the public repository's single source of truth: `origin/main`.
 

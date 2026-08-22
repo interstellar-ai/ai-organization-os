@@ -37,6 +37,7 @@ function seed() {
 }
 
 seed();
+store.update((state) => state);
 scheduler.start();
 
 const json = (response, status, payload) => {
@@ -63,7 +64,10 @@ async function route(request, response) {
   try {
     if (request.method === "GET" && url.pathname === "/") return serveDashboard(response);
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.1.0" });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.2.0", scheduler: "running", toolCount: tools.list().length });
+    }
+    if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
+      return json(response, 200, organization.summarizeGoal(parts[2]));
     }
     if (request.method === "GET" && parts[1] && ["agents", "goals", "tasks", "memories"].includes(parts[1])) {
       const resource = parts[1];
@@ -72,10 +76,14 @@ async function route(request, response) {
         : organization.list(resource).filter((item) => !url.searchParams.get("status") || item.status === url.searchParams.get("status"));
       return json(response, 200, items);
     }
+    if (request.method === "GET" && url.pathname === "/api/events") {
+      return json(response, 200, organization.list("events"));
+    }
     if (request.method === "GET" && url.pathname === "/api/tools") return json(response, 200, tools.list());
     if (request.method === "POST" && url.pathname === "/api/agents") return json(response, 201, organization.createAgent(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "plan") return json(response, 201, organization.planGoal(parts[2]));
+    if (request.method === "POST" && parts[1] === "goals" && parts[3] === "replan") return json(response, 201, organization.replanGoal(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
@@ -85,7 +93,7 @@ async function route(request, response) {
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {
-    const status = /required|not found|dependencies|Unknown tool/i.test(error.message) ? 400 : 500;
+    const status = /required|not found|dependencies|Unknown tool|executor|evidence/i.test(error.message) ? 400 : 500;
     return json(response, status, { error: error.message });
   }
 }

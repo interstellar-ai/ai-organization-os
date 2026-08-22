@@ -30,19 +30,22 @@ npm test
 | Agent management | `GET/POST /api/agents` |
 | Goal input | `GET/POST /api/goals` |
 | Generate a plan | `POST /api/goals/:id/plan` |
+| Replan a goal | `POST /api/goals/:id/replan` |
+| Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
 | Basic memory | `GET /api/memories?q=...`, `POST /api/memories` |
 | Tool registry | `GET /api/tools`, `POST /api/tools/execute` |
+| Audit events | `GET /api/events` |
 
-The current tool set includes `memory.search`, `memory.write`, `task.list`, `goal.list`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. This provides a clear boundary for future browser, GitHub, CRM, email, and model API connectors.
+The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
 
 ## Current boundaries
 
 - The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority.
-- The default runner supports tool calls. Tasks without a tool use a replaceable default runner.
+- Planned tasks use local deterministic tools that produce structured outputs and evidence. Custom tasks without an executor are blocked instead of being falsely completed.
 - Plan generation currently uses a fixed five-stage template and does not call an LLM.
 - JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
-- High-impact external actions do not yet have an approval flow; the current safety policy is stored as memory only.
+- High-impact external actions do not yet have connectors or an approval flow; the current safety policy is stored as memory and exposed in the evidence boundary.
 
 ## Iteration roadmap
 

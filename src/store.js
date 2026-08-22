@@ -5,8 +5,54 @@ const EMPTY_STATE = {
   agents: [],
   goals: [],
   tasks: [],
-  memories: []
+  memories: [],
+  events: []
 };
+
+function normalizeState(input) {
+  const state = { ...EMPTY_STATE, ...input };
+  state.agents = Array.isArray(state.agents) ? state.agents : [];
+  state.goals = Array.isArray(state.goals) ? state.goals : [];
+  state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
+  state.memories = Array.isArray(state.memories) ? state.memories : [];
+  state.events = Array.isArray(state.events) ? state.events : [];
+
+  state.tasks = state.tasks.map((task) => {
+    const normalized = {
+      acceptanceCriteria: [],
+      evidence: [],
+      attempts: 0,
+      blockedReason: null,
+      executor: task.toolName || null,
+      ...task
+    };
+    const isLegacyPlaceholder = normalized.status === "completed"
+      && !normalized.toolName
+      && normalized.output?.message === "Task completed by the default agent runner"
+      && normalized.evidence.length === 0;
+    if (isLegacyPlaceholder) {
+      normalized.status = "blocked";
+      normalized.blockedReason = "Legacy placeholder completion. Rerun this workflow with a real executor.";
+      normalized.legacyOutput = normalized.output;
+      normalized.output = null;
+    }
+    return normalized;
+  });
+
+  state.goals = state.goals.map((goal) => {
+    if (goal.executionStatus) return goal;
+    const tasks = state.tasks.filter((task) => task.goalId === goal.id);
+    const executionStatus = tasks.length === 0
+      ? "not_started"
+      : tasks.some((task) => ["blocked", "failed"].includes(task.status))
+        ? "blocked"
+        : tasks.every((task) => task.status === "completed")
+          ? "awaiting_review"
+          : "in_progress";
+    return { ...goal, executionStatus };
+  });
+  return state;
+}
 
 export class JsonStore {
   constructor(filePath) {
@@ -17,7 +63,7 @@ export class JsonStore {
 
   read() {
     const raw = fs.readFileSync(this.filePath, "utf8");
-    return { ...EMPTY_STATE, ...JSON.parse(raw) };
+    return normalizeState(JSON.parse(raw));
   }
 
   write(state) {

@@ -10,6 +10,13 @@ function required(value, name) {
   return value.trim();
 }
 
+function taskCounts(tasks) {
+  return tasks.reduce((counts, task) => {
+    counts[task.status] = (counts[task.status] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 export class Organization {
   constructor(store, tools) {
     this.store = store;
@@ -18,6 +25,27 @@ export class Organization {
 
   list(resource) {
     return this.store.read()[resource] ?? [];
+  }
+
+  getGoal(goalId) {
+    const goal = this.list("goals").find((item) => item.id === goalId);
+    if (!goal) throw new Error("Goal not found");
+    return goal;
+  }
+
+  getTask(taskId) {
+    const task = this.list("tasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("Task not found");
+    return task;
+  }
+
+  recordEvent(type, payload = {}) {
+    const event = { id: id("event"), type, payload, createdAt: now() };
+    this.store.update((state) => {
+      state.events.push(event);
+      return state;
+    });
+    return event;
   }
 
   createAgent(input = {}) {
@@ -36,6 +64,7 @@ export class Organization {
       state.agents.push(agent);
       return state;
     });
+    this.recordEvent("agent.created", { agentId: agent.id, name: agent.name });
     return agent;
   }
 
@@ -46,8 +75,9 @@ export class Organization {
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
       status: "active",
+      executionStatus: "not_started",
       priority: Number.isFinite(input.priority) ? input.priority : 3,
-      metrics: input.metrics ?? [],
+      metrics: Array.isArray(input.metrics) ? input.metrics : [],
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -55,51 +85,104 @@ export class Organization {
       state.goals.push(goal);
       return state;
     });
+    this.recordEvent("goal.created", { goalId: goal.id, title: goal.title });
     return goal;
   }
 
-  planGoal(goalId) {
-    const state = this.store.read();
-    const goal = state.goals.find((item) => item.id === goalId);
-    if (!goal) throw new Error("Goal not found");
+  latestTasksForGoal(goalId) {
+    const tasks = this.list("tasks").filter((task) => task.goalId === goalId);
+    if (!tasks.length) return [];
+    const latestCycle = Math.max(...tasks.map((task) => task.planCycle || 1));
+    return tasks.filter((task) => (task.planCycle || 1) === latestCycle);
+  }
 
+  planGoal(goalId, { force = false } = {}) {
+    const goal = this.getGoal(goalId);
+    const existing = this.list("tasks").filter((task) => task.goalId === goalId);
+    if (existing.length && !force) return this.latestTasksForGoal(goalId);
+
+    const cycle = existing.length
+      ? Math.max(...existing.map((task) => task.planCycle || 1)) + 1
+      : 1;
     const templates = [
-      ["research", "Research the market, users and constraints"],
-      ["design", "Turn the research into a practical solution design"],
-      ["build", "Build the smallest testable version"],
-      ["validate", "Validate the result against the goal and collect evidence"],
-      ["iterate", "Summarize learnings and propose the next iteration"]
+      {
+        capability: "research",
+        title: "Analyze goal scope and constraints",
+        toolName: "goal.analyze",
+        acceptanceCriteria: ["The objective is explicit", "Constraints and external actions are identified"]
+      },
+      {
+        capability: "design",
+        title: "Design an executable workflow",
+        toolName: "solution.design",
+        acceptanceCriteria: ["Agents and tools are mapped to the goal", "The next execution boundary is clear"]
+      },
+      {
+        capability: "build",
+        title: "Inspect the smallest testable version",
+        toolName: "mvp.inspect",
+        acceptanceCriteria: ["The local execution surface is checked", "Available tools and limitations are recorded"]
+      },
+      {
+        capability: "validate",
+        title: "Validate the workflow and evidence",
+        toolName: "workflow.validate",
+        acceptanceCriteria: ["Required fields and dependencies pass validation", "Unverified work is explicitly reported"]
+      },
+      {
+        capability: "iterate",
+        title: "Record next iteration decisions",
+        toolName: "iteration.record",
+        acceptanceCriteria: ["Learnings are saved to memory", "The next practical step is stated"]
+      }
     ];
-    const agents = state.agents;
-    const created = templates.map(([capability, title], index) => {
+    const agents = this.list("agents");
+    const created = templates.map((template, index) => {
       const assigned = agents.find((agent) =>
-        agent.capabilities.some((item) => item.toLowerCase() === capability)
+        agent.capabilities.some((item) => item.toLowerCase() === template.capability)
       ) ?? agents.find((agent) => agent.role === "coo") ?? agents[0];
+      const timestamp = now();
       return {
         id: id("task"),
         goalId,
-        title,
-        description: `${title} for goal: ${goal.title}. ${goal.description}`.trim(),
+        planCycle: cycle,
+        title: template.title,
+        description: `${template.title} for goal: ${goal.title}. ${goal.description}`.trim(),
         status: "pending",
         priority: Math.max(1, goal.priority + index),
         assignedAgentId: assigned?.id ?? null,
-        dependsOn: index === 0 ? [] : [],
-        toolName: null,
-        input: {},
+        dependsOn: [],
+        toolName: template.toolName,
+        executor: template.toolName,
+        input: { goalId },
+        acceptanceCriteria: template.acceptanceCriteria,
+        evidence: [],
+        attempts: 0,
         output: null,
         error: null,
-        createdAt: now(),
-        updatedAt: now()
+        blockedReason: null,
+        createdAt: timestamp,
+        updatedAt: timestamp
       };
     });
     for (let index = 1; index < created.length; index += 1) {
       created[index].dependsOn = [created[index - 1].id];
     }
-    this.store.update((current) => {
-      current.tasks.push(...created);
-      return current;
+    this.store.update((state) => {
+      state.tasks.push(...created);
+      const currentGoal = state.goals.find((item) => item.id === goalId);
+      if (currentGoal) {
+        currentGoal.executionStatus = "in_progress";
+        currentGoal.updatedAt = now();
+      }
+      return state;
     });
+    this.recordEvent("goal.planned", { goalId, cycle, taskIds: created.map((task) => task.id) });
     return created;
+  }
+
+  replanGoal(goalId) {
+    return this.planGoal(goalId, { force: true });
   }
 
   createTask(input = {}) {
@@ -107,6 +190,7 @@ export class Organization {
     const task = {
       id: id("task"),
       goalId: input.goalId || null,
+      planCycle: Number.isFinite(input.planCycle) ? input.planCycle : 1,
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
       status: "pending",
@@ -114,9 +198,14 @@ export class Organization {
       assignedAgentId: input.assignedAgentId || null,
       dependsOn: Array.isArray(input.dependsOn) ? input.dependsOn : [],
       toolName: input.toolName || null,
+      executor: input.toolName || null,
       input: input.input ?? {},
+      acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria : [],
+      evidence: [],
+      attempts: 0,
       output: null,
       error: null,
+      blockedReason: null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -124,6 +213,7 @@ export class Organization {
       state.tasks.push(task);
       return state;
     });
+    this.recordEvent("task.created", { taskId: task.id, goalId: task.goalId });
     return task;
   }
 
@@ -151,7 +241,21 @@ export class Organization {
       state.memories.push(memory);
       return state;
     });
+    this.recordEvent("memory.created", { memoryId: memory.id, scope: memory.scope });
     return memory;
+  }
+
+  syncGoalStatus(state, goalId) {
+    const goal = state.goals.find((item) => item.id === goalId);
+    if (!goal) return;
+    const tasks = state.tasks.filter((task) => task.goalId === goalId);
+    const latestCycle = tasks.length ? Math.max(...tasks.map((task) => task.planCycle || 1)) : 0;
+    const latest = tasks.filter((task) => (task.planCycle || 1) === latestCycle);
+    if (!latest.length) goal.executionStatus = "not_started";
+    else if (latest.some((task) => ["blocked", "failed"].includes(task.status))) goal.executionStatus = "blocked";
+    else if (latest.every((task) => task.status === "completed")) goal.executionStatus = "awaiting_review";
+    else goal.executionStatus = "in_progress";
+    goal.updatedAt = now();
   }
 
   updateTask(taskId, patch) {
@@ -160,31 +264,78 @@ export class Organization {
       const task = state.tasks.find((item) => item.id === taskId);
       if (!task) throw new Error("Task not found");
       Object.assign(task, patch, { updatedAt: now() });
+      this.syncGoalStatus(state, task.goalId);
       updated = task;
       return state;
     });
     return updated;
   }
 
+  summarizeGoal(goalId) {
+    const goal = this.getGoal(goalId);
+    const tasks = this.latestTasksForGoal(goalId);
+    const counts = taskCounts(tasks);
+    const evidence = tasks.flatMap((task) => task.evidence || []);
+    const total = tasks.length;
+    const completed = counts.completed || 0;
+    return {
+      ...goal,
+      progress: {
+        total,
+        completed,
+        percent: total ? Math.round((completed / total) * 100) : 0,
+        counts
+      },
+      tasks,
+      evidence,
+      nextAction: goal.executionStatus === "awaiting_review"
+        ? "Review the evidence and approve the next external action."
+        : goal.executionStatus === "blocked"
+          ? "Resolve the blocked task before continuing."
+          : "Let the scheduler continue executing ready tasks."
+    };
+  }
+
   async executeTask(taskId) {
+    const task = this.getTask(taskId);
     const state = this.store.read();
-    const task = state.tasks.find((item) => item.id === taskId);
-    if (!task) throw new Error("Task not found");
-    const blocked = task.dependsOn.some((dependencyId) => {
+    const blockedDependency = task.dependsOn.find((dependencyId) => {
       const dependency = state.tasks.find((item) => item.id === dependencyId);
       return !dependency || dependency.status !== "completed";
     });
-    if (blocked) throw new Error("Task dependencies are not completed");
+    if (blockedDependency) {
+      this.updateTask(taskId, {
+        status: "blocked",
+        blockedReason: `Dependency ${blockedDependency} is not completed.`
+      });
+      throw new Error("Task dependencies are not completed");
+    }
+    if (!task.toolName) {
+      this.updateTask(taskId, {
+        status: "blocked",
+        blockedReason: "No executor is configured for this task."
+      });
+      throw new Error("Task has no executor configured");
+    }
 
-    this.updateTask(taskId, { status: "running", error: null });
+    this.updateTask(taskId, {
+      status: "running",
+      attempts: (task.attempts || 0) + 1,
+      executor: task.toolName,
+      error: null,
+      blockedReason: null
+    });
     try {
-      const output = task.toolName
-        ? await this.tools.execute(task.toolName, task.input, { task, organization: this })
-        : { message: "Task completed by the default agent runner", task: task.title };
-      return this.updateTask(taskId, { status: "completed", output });
+      const output = await this.tools.execute(task.toolName, task.input, { task, organization: this });
+      const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
+      if (!evidence.length) throw new Error("Executor returned no evidence");
+      const result = this.updateTask(taskId, { status: "completed", output, evidence, error: null });
+      this.recordEvent("task.completed", { taskId, evidenceCount: evidence.length });
+      return result;
     } catch (error) {
-      this.updateTask(taskId, { status: "failed", error: error.message });
-      throw error;
+      const failed = this.updateTask(taskId, { status: "failed", error: error.message });
+      this.recordEvent("task.failed", { taskId, error: error.message });
+      throw Object.assign(error, { task: failed });
     }
   }
 }

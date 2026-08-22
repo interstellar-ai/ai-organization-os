@@ -40,9 +40,11 @@ The current version provides:
 - A small allowlisted tool registry;
 - A local HTTP API and browser dashboard;
 - JSON persistence for single-machine development;
-- Automated tests for planning, scheduling, memory tools, and safe failure on unknown tools.
+- Deterministic local tools that produce structured outputs and evidence;
+- Goal progress summaries and an audit-event stream;
+- Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version does not yet provide real LLM reasoning, market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, audit-grade logs, restart-safe workers, or human approval gates.
+The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, or human approval gates for external actions.
 
 ## Task state semantics
 
@@ -56,7 +58,7 @@ The UI and API should distinguish these states:
 - `failed`: execution attempted and failed;
 - `awaiting_approval`: a human decision is required.
 
-The current default runner is a test placeholder. It can validate scheduler behavior, but it must not be presented as real business execution.
+Planned tasks use deterministic local tools and must produce evidence. Custom tasks without an executor are blocked. The system still does not perform real external business actions until approved connectors and human approval gates are added.
 
 ## Roadmap
 
