@@ -10,7 +10,9 @@ This file is the short operating contract for coding agents working in this repo
 - Default branch: `main`
 - Local development URL: <http://localhost:3333/>
 - Production deployment: none yet
-- Detailed project context: [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md)
+- Documentation index: [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md)
+- Product definition: [`docs/PRODUCT.md`](docs/PRODUCT.md)
+- Project log: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md)
 
 ## Non-negotiable rules
 

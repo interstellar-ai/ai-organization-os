@@ -6,7 +6,7 @@ This is a runnable first version of an AI Organization OS. It validates the smal
 Goal input → plan generation → task scheduling → agent/tool execution → memory capture
 ```
 
-Project context, operating rules, canonical addresses, and upload requirements are documented in [`AGENTS.md`](AGENTS.md) and [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md).
+Product documentation, project notes, operating rules, canonical addresses, and upload requirements are indexed in [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Quick start
 
