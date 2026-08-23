@@ -167,7 +167,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.2", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.3", scheduler: "running", toolCount: tools.list().length });
     }
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));

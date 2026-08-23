@@ -71,11 +71,22 @@ function empty(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
 
+function setSidebarOpen(open) {
+  const sidebar = document.querySelector("#sidebar");
+  const backdrop = document.querySelector("#sidebarBackdrop");
+  const menuButton = document.querySelector("#menuButton");
+  sidebar.classList.toggle("open", open);
+  backdrop.classList.toggle("open", open);
+  backdrop.setAttribute("aria-hidden", String(!open));
+  menuButton.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("sidebar-open", open);
+}
+
 function showPage(page) {
   document.querySelectorAll("[data-page-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.pagePanel === page));
   document.querySelectorAll("[data-page]").forEach((button) => button.classList.toggle("active", button.dataset.page === page));
   document.querySelector("#pageTitle").textContent = pageTitles[page] || titleize(page);
-  document.querySelector("#sidebar").classList.remove("open");
+  setSidebarOpen(false);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -495,7 +506,11 @@ document.addEventListener("click", (event) => {
   if (closeForm) document.querySelector(`#${closeForm.dataset.closeForm}`).classList.add("hidden");
 });
 
-document.querySelector("#menuButton").addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("open"));
+document.querySelector("#menuButton").addEventListener("click", () => setSidebarOpen(!document.querySelector("#sidebar").classList.contains("open")));
+document.querySelector("#sidebarBackdrop").addEventListener("click", () => setSidebarOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.querySelector("#sidebar").classList.contains("open")) setSidebarOpen(false);
+});
 document.querySelector("#analyzeCommandButton").addEventListener("click", analyzeFounderIntent);
 document.querySelector("#intentBrief").addEventListener("click", (event) => {
   if (event.target.closest("#launchIntentButton")) launchIntent();

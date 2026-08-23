@@ -69,6 +69,11 @@ This file records dated implementation facts and decisions. Stable product defin
 - Documented that authenticated runtime identity, process and network sandboxing, brokered credentials, and output data-flow controls remain future enforcement layers.
 - Added automated coverage for hidden unauthorized assets, missing identity, missing task scope, successful authorized execution, and expired capabilities.
 
+## 2026-08-23 — Responsive navigation dismissal
+
+- Added a mobile navigation backdrop so clicking outside the open sidebar closes it without activating underlying page controls.
+- Added Escape-key dismissal, synchronized accessibility state, and background scroll locking while the sidebar is open.
+
 ## Architecture snapshot
 
 ```text
