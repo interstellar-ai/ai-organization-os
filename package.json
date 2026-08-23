@@ -2,6 +2,12 @@
   "name": "ai-organization-os-mvp",
   "version": "0.5.0",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/interstellar-ai/ai-organization-os.git"
+  },
+  "homepage": "https://github.com/interstellar-ai/ai-organization-os",
   "type": "module",
   "description": "A dependency-free MVP for managing AI agents, goals, tasks, memories and tools.",
   "scripts": {

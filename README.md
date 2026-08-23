@@ -6,6 +6,10 @@ This is a runnable first version of an AI Organization OS. It validates the smal
 Founder intent → structured intake → goal workflow → employee execution → evidence → review
 ```
 
+![AI Organization OS Projects workspace](docs/images/projects-codex-work-order.jpg)
+
+AI Organization OS is available under the [Apache License 2.0](LICENSE). See the [2–3 minute demo walkthrough](docs/DEMO.md) for a concise tour of the Founder console, permission model, and protected Codex coding workflow.
+
 Product documentation, project notes, operating rules, canonical addresses, and upload requirements are indexed in [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Quick start
@@ -30,6 +34,10 @@ Run the test suite with:
 ```bash
 npm test
 ```
+
+## Contributing
+
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening an issue or pull request. Never include credentials, personal data, local paths, or runtime state in public contributions.
 
 ## MVP API
 

@@ -87,6 +87,14 @@ This file records dated implementation facts and decisions. Stable product defin
 - Observed a local network-specific WebSocket certificate mismatch during the probe; Codex automatically fell back to HTTPS and completed successfully. The executor records this degraded transport without exposing raw certificate or path details.
 - Verified the Projects page and coding-task form in the local browser with no console errors.
 
+## 2026-08-23 — Open-source application readiness
+
+- Adopted the Apache License 2.0 for public use and contribution.
+- Added contributor guidance covering local verification, privacy, product proposals, and security reporting.
+- Added a privacy-reviewed Projects workspace screenshot showing the protected Codex work-order flow.
+- Added a truthful 2–3 minute demo script that distinguishes implemented behavior from roadmap capabilities.
+- Prepared the repository metadata and documentation for a public `v0.5.0` release.
+
 ## Architecture snapshot
 
 ```text
