@@ -8,6 +8,7 @@ const state = {
   events: [],
   assets: [],
   policies: [],
+  jobTemplates: [],
   accessRequests: [],
   employeeView: "directory",
   accessTab: "employees",
@@ -228,7 +229,8 @@ async function renderEffectiveAccess() {
     document.querySelector("#effectiveAccessList").innerHTML = empty("Create an employee to inspect access.");
     return;
   }
-  document.querySelector("#accessEmployeeSummary").innerHTML = `<div class="access-employee-profile"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(titleize(agent.jobType))} · ${escapeHtml(agent.department)}</span></div>`;
+  const template = state.jobTemplates.find((item) => item.id === agent.templateId);
+  document.querySelector("#accessEmployeeSummary").innerHTML = `<div class="access-employee-profile"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(titleize(agent.jobType))} · ${escapeHtml(agent.department)}</span><span>${template ? `Inherited from ${escapeHtml(template.name)}` : "No linked job template"}</span></div>`;
   try {
     const access = await api(`/api/access/effective?agentId=${encodeURIComponent(agent.id)}`);
     document.querySelector("#effectiveAccessList").innerHTML = access.length ? access.map((item) => `<article class="access-asset-card"><div class="access-asset-head"><div><h3>${escapeHtml(item.asset.name)}</h3><span>${escapeHtml(titleize(item.asset.type))} · ${escapeHtml(titleize(item.asset.sensitivity))}</span></div><span>${escapeHtml(titleize(item.asset.environment))}</span></div><div class="action-grid">${item.actions.map((permission) => `<div class="action-chip ${escapeHtml(permission.effect)}" title="${escapeHtml(permission.sources.map((source) => source.name).join(", ") || "No matching grant")}">${escapeHtml(permission.action)}</div>`).join("")}</div></article>`).join("") : empty("No assets are registered.");
@@ -263,11 +265,20 @@ function renderPolicies() {
   document.querySelector("#policyList").innerHTML = state.policies.length ? state.policies.map((policy) => `<article class="policy-card"><div class="goal-top"><h3>${escapeHtml(policy.name)}</h3><span class="effect ${escapeHtml(policy.effect)}">${escapeHtml(policy.effect)}</span></div><div class="policy-rule"><div class="rule-box"><span>Employee</span><strong>${escapeHtml(titleize(policy.employeeJobType))}</strong></div><span>→</span><div class="rule-box"><span>Asset</span><strong>${escapeHtml(titleize(policy.assetType))}</strong></div></div><div class="action-list">${policy.actions.map((action) => `<span>${escapeHtml(action)}</span>`).join("")}</div><p>${escapeHtml(titleize(policy.assetEnvironment))} environment · deny overrides allow</p></article>`).join("") : empty("No access policies are configured.");
 }
 
+function renderTemplates() {
+  document.querySelector("#templateList").innerHTML = state.jobTemplates.length ? state.jobTemplates.map((template) => {
+    const employees = state.agents.filter((agent) => agent.templateId === template.id || agent.jobType === template.jobType);
+    const policies = state.policies.filter((policy) => ["*", template.jobType].includes(policy.employeeJobType) && ["*", template.department].includes(policy.employeeDepartment));
+    return `<article class="template-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(template.department)}</span><h3>${escapeHtml(template.name)}</h3></div><span class="status">${escapeHtml(titleize(template.jobType))}</span></div><p>${escapeHtml(template.description || "Reusable employee role definition.")}</p><div class="action-list">${(template.capabilities || []).map((capability) => `<span>${escapeHtml(capability)}</span>`).join("") || "No capabilities"}</div><div class="template-count">${employees.length} linked employees · ${policies.length} inherited policy rules</div></article>`;
+  }).join("") : empty("No job templates are configured.");
+}
+
 function renderAccess() {
   populateAccessSelectors();
   renderEffectiveAccess();
   renderAssetList();
   renderPolicies();
+  renderTemplates();
 }
 
 function renderApprovals() {
@@ -279,7 +290,8 @@ function renderApprovals() {
   document.querySelector("#approvalList").innerHTML = items.length ? items.map((request) => {
     const agent = agentById(request.requesterAgentId);
     const asset = assetById(request.assetId);
-    return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">ACCESS REQUEST</span><h3>${escapeHtml(agent?.name || "Unknown employee")} requests ${escapeHtml(request.action)}</h3></div><span class="status ${escapeHtml(request.status)}">${escapeHtml(titleize(request.status))}</span></div><p>${escapeHtml(request.reason)}</p><div class="approval-context"><div class="detail-field"><span>Asset</span><strong>${escapeHtml(asset?.name || "Unknown")}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(request.risk)}</strong></div><div class="detail-field"><span>Duration</span><strong>${escapeHtml(request.duration)}</strong></div><div class="detail-field"><span>Requested</span><strong>${escapeHtml(formatTime(request.createdAt))}</strong></div></div>${request.status === "pending" ? `<div class="approval-actions"><button class="reject-button" data-access-decision="rejected" data-request-id="${escapeHtml(request.id)}">Reject</button><button class="primary-button" data-access-decision="approved" data-request-id="${escapeHtml(request.id)}">Approve once</button></div>` : `<div class="goal-meta"><span>Decided by ${escapeHtml(request.decidedBy || "—")}</span><span>${escapeHtml(request.decisionReason || "No decision note")}</span></div>`}</article>`;
+    const grantDetail = request.status === "consumed" ? "One-use grant consumed" : request.expiresAt ? `Expires ${formatTime(request.expiresAt)}` : request.usesRemaining === 1 ? "One use remaining" : titleize(request.grantType);
+    return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">ACCESS REQUEST</span><h3>${escapeHtml(agent?.name || "Unknown employee")} requests ${escapeHtml(request.action)}</h3></div><span class="status ${escapeHtml(request.status)}">${escapeHtml(titleize(request.status))}</span></div><p>${escapeHtml(request.reason)}</p><div class="approval-context"><div class="detail-field"><span>Asset</span><strong>${escapeHtml(asset?.name || "Unknown")}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(request.risk)}</strong></div><div class="detail-field"><span>Grant</span><strong>${escapeHtml(grantDetail)}</strong></div><div class="detail-field"><span>Requested</span><strong>${escapeHtml(formatTime(request.createdAt))}</strong></div></div>${request.status === "pending" ? `<div class="approval-actions"><button class="reject-button" data-access-decision="rejected" data-request-id="${escapeHtml(request.id)}">Reject</button><button class="secondary-button" data-access-decision="approved" data-grant-type="time_bound" data-request-id="${escapeHtml(request.id)}">Approve 1 hour</button><button class="primary-button" data-access-decision="approved" data-grant-type="once" data-request-id="${escapeHtml(request.id)}">Approve once</button></div>` : `<div class="goal-meta"><span>Decided by ${escapeHtml(request.decidedBy || "—")}</span><span>${escapeHtml(request.decisionReason || "No decision note")}</span></div>`}</article>`;
   }).join("") : empty("No approval requests have been created.");
 }
 
@@ -334,11 +346,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, jobTemplates] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/job-templates")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, jobTemplates });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -388,13 +400,31 @@ async function launchIntent() {
   }
 }
 
-async function decideRequest(requestId, decision) {
+async function decideRequest(requestId, decision, grantType = "once") {
   try {
-    await api(`/api/access-requests/${requestId}/decision`, { method: "POST", body: JSON.stringify({ decision, reason: decision === "approved" ? "Approved by Founder in the local console." : "Rejected by Founder in the local console." }) });
+    await api(`/api/access-requests/${requestId}/decision`, { method: "POST", body: JSON.stringify({ decision, grantType, durationMinutes: 60, reason: decision === "approved" ? "Approved by Founder in the local console." : "Rejected by Founder in the local console." }) });
     toast(`Access request ${decision}.`);
     await refreshData({ quiet: true });
   } catch (error) {
     toast(error.message, true);
+  }
+}
+
+function policyFormValues() {
+  const values = Object.fromEntries(new FormData(document.querySelector("#policyForm")));
+  values.actions = values.actions.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+  return values;
+}
+
+async function previewPolicyImpact() {
+  const previewElement = document.querySelector("#policyPreview");
+  try {
+    const preview = await api("/api/policies/preview", { method: "POST", body: JSON.stringify(policyFormValues()) });
+    previewElement.innerHTML = `<strong>${preview.affectedPermissionCount} permission outcomes may change</strong><span>${preview.matchedAgents.length} employees · ${preview.matchedAssets.length} assets · ${preview.candidate.actions.length} actions</span><span>${preview.conflicts.length ? `${preview.conflicts.length} conflicting policies: ${preview.conflicts.map((item) => escapeHtml(item.name)).join(", ")}` : "No conflicting policy was detected."}</span>`;
+    previewElement.classList.remove("hidden");
+  } catch (error) {
+    previewElement.innerHTML = `<strong>Preview unavailable</strong><span>${escapeHtml(error.message)}</span>`;
+    previewElement.classList.remove("hidden");
   }
 }
 
@@ -417,7 +447,7 @@ document.addEventListener("click", (event) => {
     renderAssetList();
   }
   const decision = event.target.closest("[data-access-decision]");
-  if (decision) decideRequest(decision.dataset.requestId, decision.dataset.accessDecision);
+  if (decision) decideRequest(decision.dataset.requestId, decision.dataset.accessDecision, decision.dataset.grantType || "once");
   const closeForm = event.target.closest("[data-close-form]");
   if (closeForm) document.querySelector(`#${closeForm.dataset.closeForm}`).classList.add("hidden");
 });
@@ -443,9 +473,11 @@ document.querySelectorAll("[data-access-tab]").forEach((button) => button.addEve
 document.querySelector("#accessEmployeeSelect").addEventListener("change", renderEffectiveAccess);
 document.querySelector("#showAssetFormButton").addEventListener("click", () => document.querySelector("#assetForm").classList.remove("hidden"));
 document.querySelector("#showPolicyFormButton").addEventListener("click", () => document.querySelector("#policyForm").classList.remove("hidden"));
+document.querySelector("#showTemplateFormButton").addEventListener("click", () => document.querySelector("#templateForm").classList.remove("hidden"));
 document.querySelector("#showRequestFormButton").addEventListener("click", () => document.querySelector("#requestForm").classList.remove("hidden"));
 document.querySelector("#showMemoryFormButton").addEventListener("click", () => document.querySelector("#memoryForm").classList.remove("hidden"));
 document.querySelector("#refreshAuditButton").addEventListener("click", () => refreshData());
+document.querySelector("#previewPolicyButton").addEventListener("click", previewPolicyImpact);
 
 document.querySelector("#assetForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -462,13 +494,26 @@ document.querySelector("#assetForm").addEventListener("submit", async (event) =>
 
 document.querySelector("#policyForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
-  values.actions = values.actions.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const values = policyFormValues();
   try {
     await api("/api/policies", { method: "POST", body: JSON.stringify(values) });
     event.currentTarget.reset();
     event.currentTarget.classList.add("hidden");
     toast("Policy created. Effective access has been recalculated.");
+    await refreshData({ quiet: true });
+  } catch (error) { toast(error.message, true); }
+});
+
+document.querySelector("#templateForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  values.capabilities = values.capabilities.split(",").map((item) => item.trim()).filter(Boolean);
+  values.responsibilities = values.responsibilities.split(",").map((item) => item.trim()).filter(Boolean);
+  try {
+    await api("/api/job-templates", { method: "POST", body: JSON.stringify(values) });
+    event.currentTarget.reset();
+    event.currentTarget.classList.add("hidden");
+    toast("Job template created and ready for new employees.");
     await refreshData({ quiet: true });
   } catch (error) { toast(error.message, true); }
 });

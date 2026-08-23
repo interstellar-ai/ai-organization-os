@@ -41,6 +41,16 @@ This file records dated implementation facts and decisions. Stable product defin
 - Added automated tests for policy matching, deny precedence, approval-required access, temporary grants, and access audit events.
 - Verified the live interface at <http://localhost:3333/> in the browser with no console errors.
 
+## 2026-08-23 — Access governance iteration
+
+- Added persistent job templates for the initial AI Software Product Studio roles and linked seeded employees to their inherited templates.
+- Added a Templates view in Access with inherited capabilities, linked employees, and matching policy counts.
+- Added policy impact preview before creation, including affected employees, assets, permission outcomes, and conflicting rules.
+- Added real one-use grants, time-bound grants with expiration timestamps, and a controlled access-consumption operation.
+- Added audit events for access use and changed consumed one-use requests to a non-reusable state.
+- Added tests for template inheritance, policy previews without persistence, one-use consumption, and time-bound expiration.
+- Kept project-scoped access explicitly deferred until the separate Project domain is implemented.
+
 ## Architecture snapshot
 
 ```text
@@ -48,7 +58,7 @@ public/index.html + public/styles.css + public/app.js
   → src/server.js (HTTP API and static assets)
       → src/organization.js
           → Agent / Goal / Task / Memory domain objects
-          → Asset / Policy / Access Request domain objects
+          → Job Template / Asset / Policy / Access Request domain objects
           → Scheduler
           → src/tools.js (allowlisted tools)
               → src/store.js (local JSON persistence)

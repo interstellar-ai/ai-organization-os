@@ -28,6 +28,7 @@ npm test
 | --- | --- |
 | Health check | `GET /api/health` |
 | Agent management | `GET/POST /api/agents` |
+| Job templates | `GET/POST /api/job-templates` |
 | Goal input | `GET/POST /api/goals` |
 | Generate a plan | `POST /api/goals/:id/plan` |
 | Replan a goal | `POST /api/goals/:id/replan` |
@@ -38,9 +39,11 @@ npm test
 | Audit events | `GET /api/events` |
 | Asset registry | `GET/POST /api/assets` |
 | Access policies | `GET/POST /api/policies` |
+| Preview policy impact | `POST /api/policies/preview` |
 | Effective employee access | `GET /api/access/effective?agentId=...&assetId=...` |
 | Access requests | `GET/POST /api/access-requests` |
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
+| Consume authorized access | `POST /api/access/consume` |
 
 The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
 
@@ -51,14 +54,16 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 - Plan generation currently uses a fixed five-stage template and does not call an LLM.
 - JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
 - Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.
+- One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
+- Job templates provide role inheritance. Project-scoped access remains deferred until the separate Project domain is implemented.
 
 ## Iteration roadmap
 
-1. **v0.3: Founder console and access foundation** — Multi-page UI, employee directory and organization chart, assets, policies, effective access, requests, and local approval decisions.
-2. **v0.4: Model decision layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, and clarification protocol.
-3. **v0.5: Reliable execution layer** — Add SQLite/Postgres, queues, idempotency keys, timeouts, cancellation, retries, and execution approval gates.
-4. **v0.6: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
-5. **v0.7: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
+1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, one-use grants, time-bound grants, and access-consumption audit records.
+2. **v0.5: Model decision layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, and clarification protocol.
+3. **v0.6: Reliable execution layer** — Add SQLite/Postgres, queues, idempotency keys, timeouts, cancellation, retries, and execution approval gates.
+4. **v0.7: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
+5. **v0.8: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
 6. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, budget controls, compliance, and observability.
 
 The confirmed first scenario is an AI Software Product Studio. The next implementation step is to replace the fixed five-stage template with its product, project, design, engineering, test, review, and Founder-acceptance workflow.

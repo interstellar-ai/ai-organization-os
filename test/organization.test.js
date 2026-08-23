@@ -135,4 +135,66 @@ test("approved access requests create an auditable temporary grant", () => {
   assert.equal(read.effect, "allowed");
   assert.equal(read.sources.some((source) => source.type === "temporary_grant"), true);
   assert.equal(organization.list("events").some((event) => event.type === "access.approved"), true);
+
+  const use = organization.consumeAccess({ agentId: reviewer.id, assetId: repository.id, action: "read" });
+  assert.equal(use.consumedGrantId, request.id);
+  assert.equal(organization.list("accessRequests")[0].status, "consumed");
+  const [after] = organization.effectiveAccess(reviewer.id, repository.id);
+  assert.equal(after.actions.find((item) => item.action === "read").effect, "approval_required");
+  assert.equal(organization.list("events").some((event) => event.type === "access.used"), true);
+});
+
+test("employees inherit role data from persistent job templates", () => {
+  const organization = setup();
+  const template = organization.createJobTemplate({
+    name: "Research Analyst",
+    jobType: "research_analyst",
+    department: "Research",
+    description: "Produces source-backed research.",
+    capabilities: ["research", "cite"],
+    responsibilities: ["Validate sources"]
+  });
+  const analyst = organization.createAgent({ name: "Analyst", templateId: template.id });
+  assert.equal(analyst.jobType, "research_analyst");
+  assert.equal(analyst.department, "Research");
+  assert.deepEqual(analyst.capabilities, ["research", "cite"]);
+  assert.deepEqual(analyst.responsibilities, ["Validate sources"]);
+});
+
+test("policy preview reports affected employees, assets and conflicts without saving", () => {
+  const organization = setup();
+  organization.createAgent({ name: "Engineer", jobType: "software_engineer", department: "Engineering" });
+  organization.createAsset({ name: "Repository", type: "source_code", environment: "development" });
+  organization.createPolicy({ name: "Existing deny", employeeJobType: "software_engineer", assetType: "source_code", actions: ["delete"], effect: "deny" });
+  const beforeCount = organization.list("policies").length;
+  const preview = organization.previewPolicy({ employeeJobType: "software_engineer", assetType: "source_code", actions: ["read", "delete"], effect: "allow" });
+  assert.equal(preview.matchedAgents.length, 1);
+  assert.equal(preview.matchedAssets.length, 1);
+  assert.equal(preview.affectedPermissionCount, 2);
+  assert.equal(preview.conflicts.length, 1);
+  assert.equal(organization.list("policies").length, beforeCount);
+});
+
+test("time-bound grants receive a real expiration timestamp", () => {
+  const organization = setup();
+  const employee = organization.createAgent({ name: "Publisher", jobType: "publisher" });
+  const destination = organization.createAsset({ name: "External destination", type: "publishing_destination" });
+  const request = organization.createAccessRequest({ requesterAgentId: employee.id, assetId: destination.id, action: "publish", reason: "Publish an approved artifact", grantType: "time_bound", durationMinutes: 30 });
+  const approved = organization.decideAccessRequest(request.id, { decision: "approved", grantType: "time_bound", durationMinutes: 30 });
+  assert.equal(approved.grantType, "time_bound");
+  assert.equal(new Date(approved.expiresAt).getTime() > Date.now(), true);
+  assert.equal(approved.usesRemaining, null);
+});
+
+test("persistent policy access does not consume a redundant one-use grant", () => {
+  const organization = setup();
+  const employee = organization.createAgent({ name: "Engineer", jobType: "software_engineer" });
+  const asset = organization.createAsset({ name: "Repository", type: "source_code" });
+  organization.createPolicy({ name: "Permanent read", employeeJobType: "software_engineer", assetType: "source_code", actions: ["read"], effect: "allow" });
+  const request = organization.createAccessRequest({ requesterAgentId: employee.id, assetId: asset.id, action: "read", reason: "Redundant request" });
+  organization.decideAccessRequest(request.id, { decision: "approved", grantType: "once" });
+  const use = organization.consumeAccess({ agentId: employee.id, assetId: asset.id, action: "read" });
+  assert.equal(use.consumedGrantId, null);
+  assert.equal(organization.list("accessRequests")[0].status, "approved");
+  assert.equal(organization.list("accessRequests")[0].usesRemaining, 1);
 });

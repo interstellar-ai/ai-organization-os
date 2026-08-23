@@ -9,7 +9,8 @@ const EMPTY_STATE = {
   events: [],
   assets: [],
   policies: [],
-  accessRequests: []
+  accessRequests: [],
+  jobTemplates: []
 };
 
 function normalizeState(input) {
@@ -27,14 +28,25 @@ function normalizeState(input) {
     return policy;
   }) : [];
   state.accessRequests = Array.isArray(state.accessRequests) ? state.accessRequests : [];
+  state.jobTemplates = Array.isArray(state.jobTemplates) ? state.jobTemplates : [];
 
   state.agents = state.agents.map((agent) => ({
+    templateId: null,
     jobType: agent.role || "worker",
     department: "General",
     managerId: null,
     responsibilities: [],
     projectIds: [],
     ...agent
+  }));
+
+  state.accessRequests = state.accessRequests.map((request) => ({
+    grantType: "once",
+    durationMinutes: 60,
+    usesRemaining: null,
+    expiresAt: null,
+    consumedAt: null,
+    ...request
   }));
 
   state.tasks = state.tasks.map((task) => {

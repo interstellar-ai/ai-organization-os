@@ -16,7 +16,21 @@ const scheduler = new Scheduler(organization);
 
 function seed() {
   const findAgent = (name) => organization.list("agents").find((agent) => agent.name === name);
-  const ensureAgent = (definition) => findAgent(definition.name) || organization.createAgent(definition);
+  const ensureTemplate = (definition) => organization.list("jobTemplates").find((template) => template.jobType === definition.jobType) || organization.createJobTemplate(definition);
+  const templateDefinitions = [
+    { name: "AI CEO", jobType: "ai_ceo", department: "Executive", description: "Interprets Founder intent and coordinates the AI organization.", responsibilities: ["Clarify intent", "Coordinate departments", "Report to the Founder"], capabilities: ["research", "design", "validate", "iterate"] },
+    { name: "Product Manager", jobType: "product_manager", department: "Product", description: "Defines user outcomes, product scope and acceptance criteria.", responsibilities: ["Product definition", "Requirements", "Acceptance criteria"], capabilities: ["research", "design"] },
+    { name: "Project Manager", jobType: "project_manager", department: "Operations", description: "Plans milestones, assignments, dependencies and delivery risks.", responsibilities: ["Planning", "Scheduling", "Escalation"], capabilities: ["iterate", "validate"] },
+    { name: "Technical Lead", jobType: "technical_lead", department: "Engineering", description: "Owns technical design and engineering coordination.", responsibilities: ["Architecture", "Technical planning", "Engineering review"], capabilities: ["build", "validate"] },
+    { name: "Product Designer", jobType: "product_designer", department: "Design", description: "Designs user flows, information architecture and interface behavior.", responsibilities: ["User flows", "Interaction design", "Interface specification"], capabilities: ["design"] },
+    { name: "Software Engineer", jobType: "software_engineer", department: "Engineering", description: "Implements approved product and technical designs.", responsibilities: ["Implementation", "Automated tests", "Technical evidence"], capabilities: ["build"] },
+    { name: "Quality Reviewer", jobType: "quality_reviewer", department: "Quality", description: "Independently reviews artifacts, evidence and acceptance criteria.", responsibilities: ["Independent review", "Evidence validation", "Release recommendation"], capabilities: ["validate"] },
+    { name: "Operations Lead", jobType: "operations_lead", department: "Operations", description: "Coordinates operational follow-through.", responsibilities: ["Operations coordination"], capabilities: ["research", "design", "validate", "iterate"] },
+    { name: "Prototype Builder", jobType: "prototype_builder", department: "Engineering", description: "Builds small technical prototypes.", responsibilities: ["Prototype implementation"], capabilities: ["build"] }
+  ];
+  const templates = templateDefinitions.map(ensureTemplate);
+  const templateFor = (jobType) => templates.find((template) => template.jobType === jobType);
+  const ensureAgent = (definition) => findAgent(definition.name) || organization.createAgent({ ...definition, templateId: templateFor(definition.jobType)?.id });
   const ceo = ensureAgent({
     name: "AI CEO",
     role: "ai_ceo",
@@ -61,6 +75,10 @@ function seed() {
     if (legacyCoo) Object.assign(legacyCoo, { jobType: "operations_lead", department: "Operations", managerId: ceo.id });
     const legacyBuilder = state.agents.find((agent) => agent.name === "AI Builder");
     if (legacyBuilder) Object.assign(legacyBuilder, { jobType: "prototype_builder", department: "Engineering", managerId: technical.id });
+    for (const agent of state.agents) {
+      const template = state.jobTemplates.find((item) => item.jobType === agent.jobType);
+      if (template) agent.templateId = template.id;
+    }
     return state;
   });
   ensureAgent({
@@ -149,7 +167,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.3.0", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.0", scheduler: "running", toolCount: tools.list().length });
     }
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
@@ -167,6 +185,9 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/access-requests") {
       return json(response, 200, organization.list("accessRequests"));
     }
+    if (request.method === "GET" && url.pathname === "/api/job-templates") {
+      return json(response, 200, organization.list("jobTemplates"));
+    }
     if (request.method === "GET" && url.pathname === "/api/access/effective") {
       return json(response, 200, organization.effectiveAccess(url.searchParams.get("agentId"), url.searchParams.get("assetId")));
     }
@@ -179,11 +200,14 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/job-templates") return json(response, 201, organization.createJobTemplate(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/policies/preview") return json(response, 200, organization.previewPolicy(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/policies") return json(response, 201, organization.createPolicy(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/access-requests") return json(response, 201, organization.createAccessRequest(await body(request)));
     if (request.method === "POST" && parts[1] === "access-requests" && parts[3] === "decision") {
       return json(response, 200, organization.decideAccessRequest(parts[2], await body(request)));
     }
+    if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
       return json(response, 200, await tools.execute(input.name, input.input || {}, { organization }));

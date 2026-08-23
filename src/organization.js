@@ -18,6 +18,13 @@ function taskCounts(tasks) {
   }, {});
 }
 
+function policyMatches(policy, agent, asset) {
+  return ["*", agent.jobType, agent.role].includes(policy.employeeJobType)
+    && ["*", agent.department].includes(policy.employeeDepartment)
+    && ["*", asset.type].includes(policy.assetType)
+    && ["*", asset.environment].includes(policy.assetEnvironment);
+}
+
 export class Organization {
   constructor(store, tools) {
     this.store = store;
@@ -50,17 +57,22 @@ export class Organization {
   }
 
   createAgent(input = {}) {
+    const template = input.templateId
+      ? this.list("jobTemplates").find((item) => item.id === input.templateId)
+      : null;
+    if (input.templateId && !template) throw new Error("Job template not found");
     const timestamp = now();
     const agent = {
       id: id("agent"),
       name: required(input.name, "name"),
-      role: input.role?.trim() || "worker",
-      jobType: input.jobType?.trim() || input.role?.trim() || "worker",
-      department: input.department?.trim() || "General",
+      templateId: template?.id || null,
+      role: input.role?.trim() || template?.jobType || "worker",
+      jobType: input.jobType?.trim() || input.role?.trim() || template?.jobType || "worker",
+      department: input.department?.trim() || template?.department || "General",
       managerId: input.managerId || null,
-      description: input.description?.trim() || "",
-      responsibilities: Array.isArray(input.responsibilities) ? input.responsibilities : [],
-      capabilities: Array.isArray(input.capabilities) ? input.capabilities : [],
+      description: input.description?.trim() || template?.description || "",
+      responsibilities: Array.isArray(input.responsibilities) ? input.responsibilities : template?.responsibilities || [],
+      capabilities: Array.isArray(input.capabilities) ? input.capabilities : template?.capabilities || [],
       projectIds: Array.isArray(input.projectIds) ? input.projectIds : [],
       status: "idle",
       createdAt: timestamp,
@@ -72,6 +84,29 @@ export class Organization {
     });
     this.recordEvent("agent.created", { agentId: agent.id, name: agent.name });
     return agent;
+  }
+
+  createJobTemplate(input = {}) {
+    const timestamp = now();
+    const jobType = required(input.jobType, "jobType");
+    if (this.list("jobTemplates").some((item) => item.jobType === jobType)) throw new Error("Job template already exists");
+    const template = {
+      id: id("template"),
+      name: required(input.name, "name"),
+      jobType,
+      department: input.department?.trim() || "General",
+      description: input.description?.trim() || "",
+      responsibilities: Array.isArray(input.responsibilities) ? input.responsibilities : [],
+      capabilities: Array.isArray(input.capabilities) ? input.capabilities : [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      state.jobTemplates.push(template);
+      return state;
+    });
+    this.recordEvent("job_template.created", { templateId: template.id, jobType: template.jobType });
+    return template;
   }
 
   createGoal(input = {}) {
@@ -146,6 +181,42 @@ export class Organization {
     return policy;
   }
 
+  previewPolicy(input = {}) {
+    const actions = Array.isArray(input.actions)
+      ? input.actions.map((action) => String(action).toLowerCase()).filter((action) => ACCESS_ACTIONS.includes(action))
+      : [];
+    if (!actions.length) throw new Error("actions are required");
+    const candidate = {
+      employeeJobType: input.employeeJobType?.trim() || "*",
+      employeeDepartment: input.employeeDepartment?.trim() || "*",
+      assetType: input.assetType?.trim() || "*",
+      assetEnvironment: input.assetEnvironment?.trim() || "*",
+      effect: ["deny", "approval_required"].includes(input.effect) ? input.effect : "allow",
+      actions
+    };
+    const agents = this.list("agents").filter((agent) =>
+      ["*", agent.jobType, agent.role].includes(candidate.employeeJobType)
+      && ["*", agent.department].includes(candidate.employeeDepartment)
+    );
+    const assets = this.list("assets").filter((asset) =>
+      ["*", asset.type].includes(candidate.assetType)
+      && ["*", asset.environment].includes(candidate.assetEnvironment)
+    );
+    const conflicts = this.list("policies").filter((policy) =>
+      policy.effect !== candidate.effect
+      && policy.actions.some((action) => candidate.actions.includes(action))
+      && agents.some((agent) => ["*", agent.jobType, agent.role].includes(policy.employeeJobType) && ["*", agent.department].includes(policy.employeeDepartment))
+      && assets.some((asset) => ["*", asset.type].includes(policy.assetType) && ["*", asset.environment].includes(policy.assetEnvironment))
+    );
+    return {
+      candidate,
+      matchedAgents: agents.map(({ id: agentId, name, jobType, department }) => ({ agentId, name, jobType, department })),
+      matchedAssets: assets.map(({ id: assetId, name, type, environment, sensitivity }) => ({ assetId, name, type, environment, sensitivity })),
+      affectedPermissionCount: agents.length * assets.length * actions.length,
+      conflicts: conflicts.map(({ id: policyId, name, effect, actions: policyActions }) => ({ policyId, name, effect, actions: policyActions.filter((action) => actions.includes(action)) }))
+    };
+  }
+
   createAccessRequest(input = {}) {
     const agent = this.list("agents").find((item) => item.id === input.requesterAgentId);
     if (!agent) throw new Error("Agent not found");
@@ -161,12 +232,16 @@ export class Organization {
       action,
       reason: required(input.reason, "reason"),
       duration: input.duration?.trim() || "one task",
+      grantType: input.grantType === "time_bound" ? "time_bound" : "once",
+      durationMinutes: Number.isFinite(Number(input.durationMinutes)) ? Math.max(1, Number(input.durationMinutes)) : 60,
       risk: input.risk?.trim() || "medium",
       status: "pending",
       decisionReason: null,
       decidedBy: null,
       decidedAt: null,
       expiresAt: input.expiresAt || null,
+      usesRemaining: null,
+      consumedAt: null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -191,6 +266,11 @@ export class Organization {
         decisionReason: input.reason?.trim() || "",
         decidedBy: input.decidedBy?.trim() || "Founder",
         decidedAt: now(),
+        grantType: decision === "approved" && input.grantType === "time_bound" ? "time_bound" : request.grantType,
+        usesRemaining: decision === "approved" && (input.grantType || request.grantType) !== "time_bound" ? 1 : null,
+        expiresAt: decision === "approved" && (input.grantType || request.grantType) === "time_bound"
+          ? new Date(Date.now() + (Number(input.durationMinutes || request.durationMinutes || 60) * 60_000)).toISOString()
+          : request.expiresAt,
         updatedAt: now()
       });
       updated = request;
@@ -198,6 +278,31 @@ export class Organization {
     });
     this.recordEvent(`access.${decision}`, { requestId, decidedBy: updated.decidedBy });
     return updated;
+  }
+
+  consumeAccess(input = {}) {
+    const agentId = required(input.agentId, "agentId");
+    const assetId = required(input.assetId, "assetId");
+    const action = required(input.action, "action").toLowerCase();
+    const [entry] = this.effectiveAccess(agentId, assetId);
+    const permission = entry.actions.find((item) => item.action === action);
+    if (!permission || permission.effect !== "allowed") throw new Error("Access is not allowed");
+    const persistentAllow = permission.sources.some((source) => source.type === "policy" && source.effect === "allow");
+    const grant = persistentAllow ? null : permission.sources.find((source) => source.type === "temporary_grant");
+    if (grant) {
+      this.store.update((state) => {
+        const request = state.accessRequests.find((item) => item.id === grant.id);
+        if (request?.usesRemaining === 1) {
+          request.usesRemaining = 0;
+          request.status = "consumed";
+          request.consumedAt = now();
+          request.updatedAt = now();
+        }
+        return state;
+      });
+    }
+    const event = this.recordEvent("access.used", { agentId, assetId, action, grantId: grant?.id || null });
+    return { allowed: true, agentId, assetId, action, consumedGrantId: grant?.id || null, event };
   }
 
   effectiveAccess(agentId, assetId = null) {
@@ -209,15 +314,11 @@ export class Organization {
     const approvedRequests = this.list("accessRequests").filter((request) =>
       request.requesterAgentId === agentId
       && request.status === "approved"
+      && request.usesRemaining !== 0
       && (!request.expiresAt || new Date(request.expiresAt).getTime() > Date.now())
     );
     return assets.map((asset) => {
-      const matched = policies.filter((policy) =>
-        ["*", agent.jobType, agent.role].includes(policy.employeeJobType)
-        && ["*", agent.department].includes(policy.employeeDepartment)
-        && ["*", asset.type].includes(policy.assetType)
-        && ["*", asset.environment].includes(policy.assetEnvironment)
-      );
+      const matched = policies.filter((policy) => policyMatches(policy, agent, asset));
       const actions = ACCESS_ACTIONS.map((action) => {
         const sources = matched.filter((policy) => policy.actions.includes(action));
         const temporary = approvedRequests.filter((request) => request.assetId === asset.id && request.action === action);
@@ -229,7 +330,7 @@ export class Organization {
           effect: denied ? "denied" : allowed ? "allowed" : approvalRequired ? "approval_required" : "not_granted",
           sources: [
             ...sources.map((policy) => ({ type: "policy", id: policy.id, name: policy.name, effect: policy.effect })),
-            ...temporary.map((request) => ({ type: "temporary_grant", id: request.id, name: request.duration, effect: "allow" }))
+            ...temporary.map((request) => ({ type: "temporary_grant", id: request.id, name: request.grantType === "once" ? "One use" : `Until ${request.expiresAt}`, effect: "allow", usesRemaining: request.usesRemaining, expiresAt: request.expiresAt }))
           ]
         };
       });

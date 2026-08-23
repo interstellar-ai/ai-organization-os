@@ -87,12 +87,15 @@ The current version provides:
 - Employee directory and organization-chart views with role profiles and assigned work;
 - An asset registry, attribute-matched access policies, and effective-access explanations;
 - Structured access requests with local Founder approval or rejection;
+- Persistent job templates inherited by employee instances;
+- Policy impact previews showing matched employees, assets, permission outcomes, and conflicts;
+- One-use and time-bound access grants with consumption and expiration records;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, or execution approval gates connected to external actions.
+The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, project-scoped access, or execution approval gates connected to external actions.
 
 ## Task state semantics
 
