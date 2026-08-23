@@ -5,6 +5,7 @@ This directory separates stable product knowledge from changing project notes.
 ## Read the right document
 
 - [Product document](PRODUCT.md): product purpose, principles, current scope, state semantics, and roadmap.
+- [Product discovery and decisions](PRODUCT_DISCOVERY.md): confirmed product decisions, working assumptions, open questions, and design risks.
 - [Project log](PROJECT_LOG.md): canonical addresses, architecture snapshots, decisions, milestones, and verification records.
 - [Agent instructions](../AGENTS.md): coding, privacy, testing, and GitHub upload rules.
 - [README](../README.md): public quick start and API reference.
@@ -22,4 +23,4 @@ The GitHub repository is the source of truth for code. The local JSON file is ru
 
 ## Documentation rule
 
-Keep stable product decisions in `PRODUCT.md`. Keep dated implementation facts and verification results in `PROJECT_LOG.md`. Keep operational rules in `AGENTS.md` instead of duplicating them across product documents.
+Keep the concise product definition in `PRODUCT.md`. Use `PRODUCT_DISCOVERY.md` for active product decisions, assumptions, and unresolved design questions. Keep dated implementation facts and verification results in `PROJECT_LOG.md`. Keep operational rules in `AGENTS.md` instead of duplicating them across product documents.

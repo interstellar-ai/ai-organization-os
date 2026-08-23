@@ -21,6 +21,15 @@ This file records dated implementation facts and decisions. Stable product defin
 - Migrated legacy placeholder completions to `blocked` with an explicit rerun explanation.
 - End-to-end verification produced five completed tasks with evidence and left the goal in `awaiting_review`.
 
+## 2026-08-23 — Product discovery phase
+
+- Paused further feature development to define the product operating model before changing the interface or adding autonomy.
+- Established the Founder as the primary user, supported by an AI CEO, project coordination, specialist employees, and independent quality review.
+- Defined the first task-delegation model, employee work-order contract, role and asset label permission concept, and the initial multi-page UI direction.
+- Confirmed the AI Software Product Studio as the first end-to-end workflow, covering Founder intent, product definition, planning, design, implementation, testing, independent review, and Founder acceptance.
+- Added [Product Discovery and Decision Record](PRODUCT_DISCOVERY.md) to keep active product decisions, assumptions, open questions, and risks separate from implementation history.
+- Excluded personal contributor details from the public product record.
+
 ## Architecture snapshot
 
 ```text
