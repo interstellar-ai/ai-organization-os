@@ -6,7 +6,7 @@ This is a runnable first version of an AI Organization OS. It validates the smal
 Founder intent → work classification → employee routing → approved executor → evidence → review
 ```
 
-![AI Organization OS Projects workspace](docs/images/projects-general-work-request.jpg)
+![AI Organization OS Founder Command Center](docs/images/founder-command-center.png)
 
 AI Organization OS is available under the [Apache License 2.0](LICENSE). See the [2–3 minute demo walkthrough](docs/DEMO.md) for a concise tour of the Founder console, permission model, general work routing, and protected Codex execution.
 
