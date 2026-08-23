@@ -74,6 +74,19 @@ This file records dated implementation facts and decisions. Stable product defin
 - Added a mobile navigation backdrop so clicking outside the open sidebar closes it without activating underlying page controls.
 - Added Escape-key dismissal, synchronized accessibility state, and background scroll locking while the sidebar is open.
 
+## 2026-08-23 — Codex-first coding executor
+
+- Added `code.codex` as the first real model-backed employee executor without introducing a separate Responses API dependency.
+- Added explicit coding work orders on the Projects page with developer, protected codebase, goal, priority, instructions, and acceptance criteria.
+- Required source-code `read`, `modify`, and `execute` permission plus an active, assigned, non-expired task scope before Codex can start.
+- Added a detached Git worktree per coding task, Codex `workspace-write` sandboxing, non-interactive JSONL execution, a sanitized child environment, timeout and output limits, changed-file evidence, and audit events.
+- Kept GitHub push, merge, deployment, and external-service access outside this executor.
+- Added Codex runtime health to the API and UI; the assignment action is disabled when the local CLI is unavailable.
+- Added automated tests for denied preflight access, successful protected execution, safe CLI arguments, environment filtering, and evidence parsing.
+- Repaired and verified the local Codex CLI installation at version `0.149.0` with ChatGPT authentication; a read-only non-interactive probe returned the expected final message and no real coding task was submitted.
+- Observed a local network-specific WebSocket certificate mismatch during the probe; Codex automatically fell back to HTTPS and completed successfully. The executor records this degraded transport without exposing raw certificate or path details.
+- Verified the Projects page and coding-task form in the local browser with no console errors.
+
 ## Architecture snapshot
 
 ```text
@@ -84,6 +97,7 @@ public/index.html + public/styles.css + public/app.js
           → Job Template / Asset / Policy / Access Request domain objects
           → Scheduler
           → src/tools.js (allowlisted tools)
+              → src/executors/codex.js (protected coding worktrees)
               → src/store.js (local JSON persistence)
 ```
 

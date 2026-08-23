@@ -16,6 +16,15 @@ npm start
 
 Open <http://localhost:3333>. On first launch, the server creates an example AI organization, classified assets, access policies, and one safety-policy memory. Runtime data is stored in `data/state.json`.
 
+To enable Codex-powered coding tasks, install the [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) and sign in with ChatGPT:
+
+```bash
+npm install -g @openai/codex
+codex login
+```
+
+The Projects page reports whether Codex is ready. Creating a coding task is explicit: it assigns a build-capable employee and a protected source-code asset, creates a task-scoped permission lease, and runs `codex exec` in an isolated Git worktree with workspace-only writes.
+
 Run the test suite with:
 
 ```bash
@@ -35,6 +44,8 @@ npm test
 | Replan a goal | `POST /api/goals/:id/replan` |
 | Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
+| Codex runtime status | `GET /api/codex/status` |
+| Create a protected coding task | `POST /api/coding/tasks` |
 | Basic memory | `GET /api/memories?q=...`, `POST /api/memories` |
 | Tool registry | `GET /api/tools`, `POST /api/tools/execute` |
 | Audit events | `GET /api/events` |
@@ -47,7 +58,7 @@ npm test
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
 | Consume authorized access | `POST /api/access/consume` |
 
-The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
+The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
 
 ## Current boundaries
 
@@ -60,13 +71,15 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 - Job templates provide role inheritance. Project-scoped access remains deferred until the separate Project domain is implemented.
 - The Employees page can hire an employee from a job template after previewing inherited responsibilities, capabilities, matching policies, and default access. Role defaults are copied at hire time; template editing and employee overrides are not yet exposed.
 - Protected tools require employee identity, an active assigned task, a non-expired task capability, and an allowed access-policy decision. The authorized asset catalog hides assets outside the employee's allowed or requestable policy scope.
+- `code.codex` requires `read`, `modify`, and `execute` permission on the assigned source-code asset before Codex starts. Each run uses a detached local Git worktree, the `workspace-write` Codex sandbox, a sanitized child-process environment, bounded output, and a timeout.
+- Codex coding tasks cannot push, merge or deploy through this executor. The current version records changed files and execution evidence, but does not yet provide a Founder review-and-apply workflow or automatic worktree cleanup.
 - The current HTTP API is still a trusted single-Founder development surface without authentication. A production deployment must derive employee and task identity from signed runtime credentials rather than request fields.
 
 ## Iteration roadmap
 
 1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, temporary grants, authorized asset discovery, task capabilities, and enforced protected-tool checks.
-2. **v0.5: Model decision layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, and clarification protocol.
-3. **v0.6: Reliable execution layer** — Add SQLite/Postgres, queues, idempotency keys, timeouts, cancellation, retries, and execution approval gates.
+2. **v0.5: Codex-first coding executor** — Add protected Codex work orders, isolated Git worktrees, runtime health, evidence, and a Founder-facing assignment form.
+3. **v0.6: Model decision and reliable execution layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, SQLite/Postgres, queues, idempotency, cancellation, retries, and execution approval gates.
 4. **v0.7: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
 5. **v0.8: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
 6. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, budget controls, compliance, and observability.

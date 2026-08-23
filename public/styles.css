@@ -78,6 +78,7 @@ button { color: inherit; }
 .mode-badge, .preview-badge, .safety-badge { display: inline-flex; align-items: center; min-height: 27px; padding: 0 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .safety-badge { background: var(--amber-soft); color: var(--amber); }
 .preview-badge { border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.preview-badge.warning { border-color: #dfd2b7; background: var(--amber-soft); color: #74501e; }
 .conversation-line { display: flex; gap: 11px; align-items: center; padding: 13px 0; border-top: 1px solid var(--line); }
 .speaker { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; font-size: 11px; font-weight: 800; }
 .speaker.founder { background: var(--green); color: white; }

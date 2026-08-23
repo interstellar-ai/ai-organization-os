@@ -190,6 +190,9 @@ export class Organization {
       externalImpact: input.externalImpact?.trim() || "none",
       description: input.description?.trim() || "",
       tags: Array.isArray(input.tags) ? input.tags : [],
+      workspacePath: input.type === "source_code" && typeof input.workspacePath === "string"
+        ? input.workspacePath.trim() || null
+        : null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -569,6 +572,32 @@ export class Organization {
     });
     this.recordEvent("task.created", { taskId: task.id, goalId: task.goalId });
     return task;
+  }
+
+  createCodingTask(input = {}) {
+    const agent = this.list("agents").find((item) => item.id === input.assignedAgentId);
+    if (!agent) throw new Error("Assigned employee not found");
+    if (!agent.capabilities.some((capability) => capability.toLowerCase() === "build")) {
+      throw new Error("Assigned employee does not have the build capability");
+    }
+    const asset = this.list("assets").find((item) => item.id === input.assetId);
+    if (!asset || asset.type !== "source_code") throw new Error("Source-code asset not found");
+    if (!asset.workspacePath) throw new Error("Source-code asset has no local workspace configured");
+    const instructions = required(input.instructions, "instructions");
+    return this.createTask({
+      goalId: input.goalId || null,
+      title: input.title?.trim() || `Implement: ${instructions.slice(0, 80)}`,
+      description: input.description?.trim() || instructions,
+      priority: Number.isFinite(Number(input.priority)) ? Number(input.priority) : 3,
+      assignedAgentId: agent.id,
+      toolName: "code.codex",
+      input: { assetId: asset.id, instructions },
+      accessScope: [{ assetId: asset.id, actions: ["read", "modify", "execute"] }],
+      accessExpiresAt: input.accessExpiresAt || new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+      acceptanceCriteria: Array.isArray(input.acceptanceCriteria) && input.acceptanceCriteria.length
+        ? input.acceptanceCriteria.map((item) => String(item).trim()).filter(Boolean)
+        : ["The requested change is implemented", "Relevant local tests pass", "Changed files and remaining limitations are reported"]
+    });
   }
 
   searchMemories(query = "") {

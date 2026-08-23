@@ -158,7 +158,15 @@ All protected operations pass through a Tool Gateway that derives employee and t
 
 Asset discovery is permission-aware. An Agent may discover sanitized metadata only for assets it is allowed to use or may request through an approval-required policy. Assets with no discoverable relationship remain absent from search results. Actual use is narrower than discovery and additionally requires an active, non-expired task scope.
 
-The production architecture also requires isolated execution, restricted filesystem mounts, network egress controls, brokered secrets, rate and budget limits, output data-flow checks, anomaly detection, and authenticated runtime identity. The local MVP implements the policy-aware catalog and protected-tool enforcement boundary first; it does not claim process-level sandboxing yet.
+The production architecture also requires isolated execution, restricted filesystem mounts, network egress controls, brokered secrets, rate and budget limits, output data-flow checks, anomaly detection, and authenticated runtime identity. The local MVP now adds a Codex workspace-write sandbox and detached worktree for coding tasks, but it does not claim production-grade container or tenant isolation.
+
+### D-009 — Codex-first coding provider
+
+The first real model-backed executor is Codex CLI authenticated through ChatGPT. A separately billed Responses API adapter remains a future optional provider rather than an MVP dependency.
+
+Codex is an execution provider, not the authority layer. AI Organization OS owns the work order, employee assignment, protected source-code asset, task capability, access decision, timeout, evidence, and audit record. Codex receives only the isolated worktree and bounded instructions after source-code read, modify, and execute permissions pass.
+
+The executor may inspect and edit code and run local tests. It may not push, merge, deploy, use external services, or receive unrestricted credentials. Provider adapters remain replaceable so future Responses API, local-model, or third-party coding executors can implement the same work-order contract without changing organization policy semantics.
 
 ## Shared product vocabulary
 

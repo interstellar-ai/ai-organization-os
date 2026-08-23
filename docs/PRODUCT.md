@@ -93,12 +93,15 @@ The current version provides:
 - One-use and time-bound access grants with consumption and expiration records;
 - An authorized asset catalog that hides assets outside an employee's allowed or requestable scope;
 - Tool-gateway enforcement requiring employee identity, active task assignment, task-scoped capability, policy permission, and audit evidence for protected asset operations;
+- A Codex-first coding executor for explicit development work orders, protected by source-code read, modify, and execute permissions;
+- Per-task detached Git worktrees, Codex workspace-write sandboxing, sanitized process environments, execution timeouts, bounded output, changed-file summaries, and evidence;
+- A Founder-facing Projects form for assigning a developer, codebase, related goal, priority, instructions, and acceptance criteria;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, process or network sandboxing, output data-flow controls, restart-safe workers, project-scoped access, or execution approval gates connected to external actions.
+The current version uses real model reasoning only for explicit Codex coding tasks. It does not yet provide an LLM-backed CEO or planner, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, production-grade container isolation, output data-flow controls, restart-safe workers, project-scoped access, a review-and-apply workflow for worktree changes, or execution approval gates connected to external actions.
 
 ## Task state semantics
 
@@ -116,10 +119,10 @@ Planned tasks use deterministic local tools and must produce evidence. Custom ta
 
 ## Roadmap
 
-1. Replace the fixed planner with an LLM-backed planner that emits validated structured tasks.
-2. Replace JSON persistence with SQLite or Postgres and add migrations.
-3. Replace the in-process scheduler with a durable queue and worker model.
-4. Add evidence objects, execution logs, retries, timeouts, cancellation, and cost tracking.
-5. Add scoped connectors for research, GitHub, browser automation, email, CRM, and publishing.
-6. Add authentication, role-based permissions, approval gates, and tenant isolation.
-7. Build the confirmed AI Software Product Studio workflow before expanding into other organization templates and business functions.
+1. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex coding workflow.
+2. Replace the fixed planner with an LLM-backed planner that emits validated structured tasks while keeping Responses API support optional.
+3. Replace JSON persistence with SQLite or Postgres and add migrations.
+4. Replace the in-process scheduler with a durable queue and worker model.
+5. Add scoped connectors for GitHub review/push, research, browser automation, email, CRM, and publishing.
+6. Add authenticated runtime identity, secret brokering, role-based permissions, approval gates, and tenant isolation.
+7. Complete the confirmed AI Software Product Studio workflow before expanding into other organization templates and business functions.

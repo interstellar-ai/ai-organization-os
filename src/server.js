@@ -5,12 +5,16 @@ import { fileURLToPath } from "node:url";
 import { JsonStore } from "./store.js";
 import { Organization, Scheduler } from "./organization.js";
 import { createDefaultTools } from "./tools.js";
+import { CodexExecutor } from "./executors/codex.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.join(root, "..");
 const port = Number(process.env.PORT || 3333);
-const store = new JsonStore(path.join(root, "..", "data", "state.json"));
+const store = new JsonStore(path.join(projectRoot, "data", "state.json"));
 const organization = new Organization(store, null);
-const tools = createDefaultTools(organization);
+const codexExecutor = new CodexExecutor({ projectRoot });
+await codexExecutor.checkAvailability();
+const tools = createDefaultTools(organization, { codexExecutor });
 organization.tools = tools;
 const scheduler = new Scheduler(organization);
 
@@ -123,7 +127,14 @@ function seed() {
 
   const ensureAsset = (definition) => organization.list("assets").find((asset) => asset.name === definition.name) || organization.createAsset(definition);
   ensureAsset({ name: "Product Knowledge Base", type: "document_collection", owner: "Product", sensitivity: "internal", environment: "workspace", description: "Approved product definitions and project knowledge." });
-  ensureAsset({ name: "Source Code Repository", type: "source_code", owner: "Engineering", sensitivity: "internal", environment: "development", description: "Application source code in the assigned project scope." });
+  const sourceCodeAsset = ensureAsset({ name: "Source Code Repository", type: "source_code", owner: "Engineering", sensitivity: "internal", environment: "development", workspacePath: ".", description: "Application source code in the assigned project scope." });
+  if (!sourceCodeAsset.workspacePath) {
+    store.update((state) => {
+      const asset = state.assets.find((item) => item.id === sourceCodeAsset.id);
+      if (asset) asset.workspacePath = ".";
+      return state;
+    });
+  }
   ensureAsset({ name: "Local Runtime State", type: "runtime_data", owner: "Operations", sensitivity: "confidential", environment: "development", description: "Local goals, tasks, memory and audit data. Never uploaded to Git." });
   ensureAsset({ name: "Public GitHub Repository", type: "publishing_destination", owner: "Founder", sensitivity: "public", environment: "external", externalImpact: "high", description: "Public source-code destination. Writes require explicit authorization." });
 
@@ -167,8 +178,9 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.3", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.5.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status() });
     }
+    if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
     }
@@ -200,6 +212,10 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "plan") return json(response, 201, organization.planGoal(parts[2]));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "replan") return json(response, 201, organization.replanGoal(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/coding/tasks") {
+      if (!codexExecutor.status().available) return json(response, 503, { error: `Codex executor unavailable: ${codexExecutor.status().reason}` });
+      return json(response, 201, organization.createCodingTask(await body(request)));
+    }
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));

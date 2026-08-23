@@ -7,11 +7,11 @@ import { JsonStore } from "../src/store.js";
 import { Organization, Scheduler } from "../src/organization.js";
 import { createDefaultTools } from "../src/tools.js";
 
-function setup() {
+function setup(options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-org-os-"));
   const store = new JsonStore(path.join(dir, "state.json"));
   const organization = new Organization(store, null);
-  organization.tools = createDefaultTools(organization);
+  organization.tools = createDefaultTools(organization, options);
   return organization;
 }
 
@@ -276,4 +276,47 @@ test("expired task capabilities are rejected without revealing asset details", a
   await assert.rejects(() => organization.executeTask(task.id), (error) => error.message === "Tool authorization denied" && !error.message.includes(repository.name));
   assert.throws(() => organization.createTask({ title: "Invalid lease", accessExpiresAt: "not-a-time" }), /valid timestamp/);
   assert.throws(() => organization.createTask({ title: "Unknown assignee", assignedAgentId: "agent_missing" }), /Assigned employee not found/);
+});
+
+test("a coding task reaches Codex only after all repository permissions pass", async () => {
+  const calls = [];
+  const codexExecutor = {
+    async execute(context) {
+      calls.push(context);
+      return {
+        kind: "codex_execution",
+        summary: "Implemented the requested change and ran tests.",
+        provider: "codex-cli",
+        sandbox: "workspace-write",
+        worktreeId: context.task.id,
+        changedFiles: ["src/feature.js", "test/feature.test.js"],
+        workspaceStatus: " M src/feature.js",
+        eventCount: 4,
+        restrictions: ["No push", "No merge", "No deployment", "No external-service access"]
+      };
+    }
+  };
+  const organization = setup({ codexExecutor });
+  const engineer = organization.createAgent({ name: "Engineer", jobType: "software_engineer", capabilities: ["build"] });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code", workspacePath: ".", environment: "development" });
+  organization.createPolicy({ name: "Engineer reads code", employeeJobType: "software_engineer", assetType: "source_code", actions: ["read", "execute"], effect: "allow" });
+  const denied = organization.createCodingTask({ title: "Denied implementation", instructions: "Add the feature", assignedAgentId: engineer.id, assetId: repository.id });
+  await assert.rejects(() => organization.executeTask(denied.id), /Tool authorization denied/);
+  assert.equal(calls.length, 0);
+
+  organization.createPolicy({ name: "Engineer modifies code", employeeJobType: "software_engineer", assetType: "source_code", actions: ["modify"], effect: "allow" });
+  const task = organization.createCodingTask({
+    title: "Implement feature",
+    instructions: "Add the feature without changing existing behavior",
+    assignedAgentId: engineer.id,
+    assetId: repository.id,
+    acceptanceCriteria: ["Tests pass"]
+  });
+  const completed = await organization.executeTask(task.id);
+  assert.equal(completed.status, "completed");
+  assert.deepEqual(completed.output.changedFiles, ["src/feature.js", "test/feature.test.js"]);
+  assert.equal(completed.evidence[0].type, "codex_execution");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].task.accessScope[0].actions, ["read", "modify", "execute"]);
+  assert.equal(organization.list("events").filter((event) => event.type === "tool.authorized" && event.payload.taskId === task.id).length, 3);
 });

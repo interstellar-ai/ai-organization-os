@@ -37,21 +37,24 @@ export class ToolRegistry {
       context.organization?.recordEvent("tool.denied", { toolName: name, reason: "Missing employee identity" });
       throw new Error("Tool identity required");
     }
-    const decision = tool.options.authorize
-      ? context.organization.authorizeToolCall({
-          ...tool.options.authorize(input || {}, context),
-          agentId: context.agent.id,
-          taskId: context.task?.id,
-          toolName: name
-        })
-      : null;
-    const output = await tool.handler(input, { ...context, authorization: decision });
-    if (decision) context.organization.completeAuthorizedToolCall(decision);
+    const authorizationRequests = tool.options.authorize
+      ? tool.options.authorize(input || {}, context)
+      : [];
+    const decisions = (Array.isArray(authorizationRequests) ? authorizationRequests : [authorizationRequests]).map((request) =>
+      context.organization.authorizeToolCall({
+        ...request,
+        agentId: context.agent.id,
+        taskId: context.task?.id,
+        toolName: name
+      })
+    );
+    const output = await tool.handler(input, { ...context, authorization: decisions });
+    for (const decision of decisions) context.organization.completeAuthorizedToolCall(decision);
     return output;
   }
 }
 
-export function createDefaultTools(organization) {
+export function createDefaultTools(organization, options = {}) {
   const registry = new ToolRegistry();
   registry
     .register("goal.analyze", "Analyze a goal's objective, constraints, and external-action boundary", (_input, { task }) => {
@@ -201,5 +204,28 @@ export function createDefaultTools(organization) {
         evidence: [evidence("authorized_asset_inspection", "Protected asset metadata was read through the tool gateway.", { assetId: asset.id })]
       };
     }, { authorize: (input) => ({ assetId: input.assetId, action: "read" }) });
+
+  if (options.codexExecutor) {
+    registry.register("code.codex", "Implement an assigned coding task with Codex in an isolated Git worktree", async (input, { task, agent }) => {
+      const asset = organization.list("assets").find((item) => item.id === input.assetId);
+      const result = await options.codexExecutor.execute({ task, agent, asset });
+      return {
+        ...result,
+        evidence: [evidence("codex_execution", "Codex completed a sandboxed coding run and returned inspectable workspace evidence.", {
+          provider: result.provider,
+          sandbox: result.sandbox,
+          networkAccess: result.networkAccess,
+          transport: result.transport,
+          worktreeId: result.worktreeId,
+          changedFiles: result.changedFiles,
+          eventCount: result.eventCount,
+          usage: result.usage,
+          restrictions: result.restrictions
+        })]
+      };
+    }, {
+      authorize: (input) => ["read", "modify", "execute"].map((action) => ({ assetId: input.assetId, action }))
+    });
+  }
   return registry;
 }
