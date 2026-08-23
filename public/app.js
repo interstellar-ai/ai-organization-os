@@ -145,43 +145,39 @@ function renderGoals() {
 function renderProjects() {
   const codex = state.health?.codex || { available: false, reason: "Codex status is unavailable" };
   const statusBadge = document.querySelector("#codexStatusBadge");
-  const newTaskButton = document.querySelector("#showCodingTaskFormButton");
-  statusBadge.textContent = codex.available ? `Codex ready · ${codex.version || "authenticated runtime"}` : "Codex unavailable";
+  statusBadge.textContent = codex.available ? "1 executor connected · Codex" : "No model executor connected";
   statusBadge.classList.toggle("warning", !codex.available);
-  newTaskButton.disabled = !codex.available;
-  document.querySelector("#submitCodingTaskButton").disabled = !codex.available;
-  document.querySelector("#codexRuntimeNotice").innerHTML = codex.available
-    ? `<strong>Protected Codex execution is ready</strong><span>Each task runs in an isolated Git worktree with workspace-only writes. Push, merge, deployment and external-service access are excluded.</span>`
-    : `<strong>Codex needs attention before work can start</strong><span>${escapeHtml(codex.reason || "The Codex CLI could not be started.")}</span>`;
+  document.querySelector("#executorRuntimeNotice").innerHTML = codex.available
+    ? `<strong>General intake with one live executor</strong><span>All work types can be classified and routed. Software development can run through protected Codex; other specialties remain blocked until their approved executors are connected.</span>`
+    : `<strong>General intake is ready; execution is limited</strong><span>Requests can be classified and assigned, but model-backed work remains blocked until an approved executor is connected. ${escapeHtml(codex.reason || "Codex is not available.")}</span>`;
 
-  const developerRank = { software_engineer: 0, technical_lead: 1 };
-  const developers = state.agents
-    .filter((agent) => agent.capabilities?.some((capability) => capability.toLowerCase() === "build"))
-    .sort((left, right) => (developerRank[left.jobType] ?? 10) - (developerRank[right.jobType] ?? 10) || left.name.localeCompare(right.name));
+  const employees = [...state.agents].sort((left, right) => left.department.localeCompare(right.department) || left.name.localeCompare(right.name));
   const repositories = state.assets.filter((asset) => asset.type === "source_code" && asset.workspacePath);
-  const agentSelect = document.querySelector("#codingAgentSelect");
-  const assetSelect = document.querySelector("#codingAssetSelect");
-  const goalSelect = document.querySelector("#codingGoalSelect");
+  const agentSelect = document.querySelector("#workAgentSelect");
+  const assetSelect = document.querySelector("#workAssetSelect");
+  const goalSelect = document.querySelector("#workGoalSelect");
   const selectedAgent = agentSelect.value;
   const selectedAsset = assetSelect.value;
   const selectedGoal = goalSelect.value;
-  agentSelect.innerHTML = developers.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)} · ${escapeHtml(agent.department)}</option>`).join("");
-  assetSelect.innerHTML = repositories.map((asset) => `<option value="${escapeHtml(asset.id)}">${escapeHtml(asset.name)}</option>`).join("");
+  agentSelect.innerHTML = `<option value="">Auto assign</option>${employees.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)} · ${escapeHtml(agent.department)}</option>`).join("")}`;
+  assetSelect.innerHTML = `<option value="">Auto select when unambiguous</option>${repositories.map((asset) => `<option value="${escapeHtml(asset.id)}">${escapeHtml(asset.name)}</option>`).join("")}`;
   goalSelect.innerHTML = `<option value="">No related goal</option>${state.goals.map((goal) => `<option value="${escapeHtml(goal.id)}">${escapeHtml(goal.title)}</option>`).join("")}`;
-  if (developers.some((agent) => agent.id === selectedAgent)) agentSelect.value = selectedAgent;
+  if (employees.some((agent) => agent.id === selectedAgent)) agentSelect.value = selectedAgent;
   if (repositories.some((asset) => asset.id === selectedAsset)) assetSelect.value = selectedAsset;
   if (state.goals.some((goal) => goal.id === selectedGoal)) goalSelect.value = selectedGoal;
 
-  const codingTasks = state.tasks.filter((task) => task.toolName === "code.codex").slice().reverse();
-  document.querySelector("#codingTaskList").innerHTML = codingTasks.length ? codingTasks.map((task) => {
+  const workRequests = state.tasks.filter((task) => task.requestSource === "founder_work_request" || task.toolName === "code.codex").slice().reverse();
+  document.querySelector("#workRequestList").innerHTML = workRequests.length ? workRequests.map((task) => {
     const agent = agentById(task.assignedAgentId);
     const goal = state.goals.find((item) => item.id === task.goalId);
     const changedFiles = task.output?.changedFiles || [];
     const result = task.status === "completed"
-      ? task.output?.summary || "Codex completed the work order."
-      : task.error || task.blockedReason || (task.status === "running" ? "Codex is inspecting and editing the isolated worktree." : "Waiting for the scheduler.");
-    return `<article class="project-card"><div class="goal-top"><div><span class="section-kicker">CODEX TASK</span><h3>${escapeHtml(task.title)}</h3></div><span class="status ${escapeHtml(task.status)}">${escapeHtml(titleize(task.status))}</span></div><p>${escapeHtml(result)}</p><div class="goal-meta"><span>${escapeHtml(agent?.name || "Unassigned")}</span><span>${escapeHtml(goal?.title || "Independent task")}</span><span>${task.attempts || 0} execution attempt${task.attempts === 1 ? "" : "s"}</span><span>${task.evidence?.length || 0} evidence records</span></div>${changedFiles.length ? `<div class="memory-tags">${changedFiles.map((file) => `<span class="tag">${escapeHtml(file)}</span>`).join("")}</div>` : ""}</article>`;
-  }).join("") : empty("No coding task has been assigned yet.");
+      ? task.output?.summary || "The assigned executor completed this work order."
+      : task.error || task.blockedReason || task.nextAction || (task.status === "running" ? "The assigned employee is working with an approved executor." : "Waiting for the scheduler.");
+    const typeLabel = task.routing?.typeLabel || (task.workType ? titleize(task.workType) : "Software development");
+    const executor = task.executor || task.routing?.requiredExecutor || "Executor not selected";
+    return `<article class="project-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(typeLabel)}</span><h3>${escapeHtml(task.title)}</h3></div><span class="status ${escapeHtml(task.status)}">${escapeHtml(titleize(task.status))}</span></div><p>${escapeHtml(result)}</p>${task.deliverable ? `<div class="work-deliverable"><span>Expected deliverable</span><strong>${escapeHtml(task.deliverable)}</strong></div>` : ""}<div class="goal-meta"><span>${escapeHtml(agent?.name || "Unassigned")}</span><span>${escapeHtml(goal?.title || "Independent work")}</span><span>${escapeHtml(executor)}</span><span>${task.evidence?.length || 0} evidence records</span></div>${changedFiles.length ? `<div class="memory-tags">${changedFiles.map((file) => `<span class="tag">${escapeHtml(file)}</span>`).join("")}</div>` : ""}</article>`;
+  }).join("") : empty("No Founder work request has been created yet.");
 
   document.querySelector("#projectList").innerHTML = state.goalSummaries.length
     ? state.goalSummaries.slice().reverse().map((goal) => {
@@ -196,12 +192,12 @@ function renderProjects() {
 function employeeStatus(agent) {
   const tasks = state.tasks.filter((task) => task.assignedAgentId === agent.id);
   if (tasks.some((task) => ["blocked", "failed"].includes(task.status))) return "blocked";
-  if (tasks.some((task) => ["pending", "running"].includes(task.status))) return "working";
+  if (tasks.some((task) => ["planned", "pending", "running"].includes(task.status))) return "working";
   return agent.status || "available";
 }
 
 function employeeWork(agent) {
-  const active = state.tasks.find((task) => task.assignedAgentId === agent.id && ["running", "pending", "blocked", "failed"].includes(task.status));
+  const active = state.tasks.find((task) => task.assignedAgentId === agent.id && ["running", "pending", "planned", "blocked", "failed"].includes(task.status));
   const recent = state.tasks.filter((task) => task.assignedAgentId === agent.id && task.status === "completed").at(-1);
   return active?.title || recent?.title || "Available for assignment";
 }
@@ -563,10 +559,12 @@ document.querySelectorAll("[data-employee-view]").forEach((button) => button.add
 }));
 document.querySelector("#employeeSearch").addEventListener("input", renderEmployees);
 document.querySelector("#departmentFilter").addEventListener("change", renderEmployees);
-document.querySelector("#showCodingTaskFormButton").addEventListener("click", () => {
-  if (!state.health?.codex?.available) return toast(state.health?.codex?.reason || "Codex is unavailable.", true);
-  document.querySelector("#codingTaskForm").classList.remove("hidden");
-  document.querySelector("#codingTaskForm").scrollIntoView({ behavior: "smooth", block: "start" });
+document.querySelector("#showWorkRequestFormButton").addEventListener("click", () => {
+  document.querySelector("#workRequestForm").classList.remove("hidden");
+  document.querySelector("#workRequestForm").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.querySelector("#workTypeSelect").addEventListener("change", (event) => {
+  document.querySelector("#workAssetField").classList.toggle("hidden", event.currentTarget.value !== "software_development");
 });
 document.querySelector("#showHireFormButton").addEventListener("click", () => openHireForm());
 document.querySelector("#cancelHireButton").addEventListener("click", () => document.querySelector("#hireEmployeeForm").classList.add("hidden"));
@@ -585,17 +583,23 @@ document.querySelector("#showMemoryFormButton").addEventListener("click", () => 
 document.querySelector("#refreshAuditButton").addEventListener("click", () => refreshData());
 document.querySelector("#previewPolicyButton").addEventListener("click", previewPolicyImpact);
 
-document.querySelector("#codingTaskForm").addEventListener("submit", async (event) => {
+document.querySelector("#workRequestForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(event.currentTarget));
   values.priority = Number(values.priority);
   values.acceptanceCriteria = values.acceptanceCriteria.split(",").map((item) => item.trim()).filter(Boolean);
   if (!values.goalId) delete values.goalId;
+  if (!values.assignedAgentId) delete values.assignedAgentId;
+  if (!values.assetId) delete values.assetId;
   try {
-    const task = await api("/api/coding/tasks", { method: "POST", body: JSON.stringify(values) });
+    const task = await api("/api/work-requests", { method: "POST", body: JSON.stringify(values) });
     event.currentTarget.reset();
     event.currentTarget.classList.add("hidden");
-    toast(`Coding task assigned. ${agentById(task.assignedAgentId)?.name || "The developer"} is starting in an isolated worktree.`);
+    document.querySelector("#workAssetField").classList.add("hidden");
+    const employee = agentById(task.assignedAgentId)?.name || "The selected employee";
+    toast(task.status === "blocked"
+      ? `Work request routed to ${employee}. An approved executor is still needed.`
+      : `Work request routed to ${employee} and queued for execution.`);
     await refreshData({ quiet: true });
   } catch (error) { toast(error.message, true); }
 });

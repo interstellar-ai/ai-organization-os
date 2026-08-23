@@ -137,6 +137,10 @@ input, select { min-height: 42px; padding: 0 12px; }
 .progress { height: 6px; margin: 14px 0 7px; border-radius: 999px; background: #e8ebe4; overflow: hidden; }
 .progress i { display: block; height: 100%; border-radius: inherit; background: var(--green-2); }
 .goal-meta, .employee-meta, .asset-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--faint); font-size: 10px; }
+.work-deliverable { margin: 14px 0; padding: 10px 12px; border-radius: 10px; background: #f5f6f1; }
+.work-deliverable span, .work-deliverable strong { display: block; }
+.work-deliverable span { color: var(--faint); font-size: 8px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.work-deliverable strong { margin-top: 4px; font-size: 10px; line-height: 1.45; }
 .goal-list, .project-list, .policy-list, .template-list, .approval-list, .memory-list, .event-list { display: grid; gap: 12px; }
 .goal-detail, .project-card { padding: 20px; }
 .goal-description { margin: 8px 0 15px; color: var(--muted); }

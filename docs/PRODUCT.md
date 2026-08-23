@@ -40,6 +40,8 @@ The target interface is a multi-page Founder operating console rather than a sin
 
 Home is the Founder Command Center. Employees supports both directory and organization-chart views over the same employee records.
 
+Projects is a general delivery workspace rather than a coding console. The Founder describes a desired outcome, deliverable, context, constraints, acceptance criteria, priority, and optional goal. The system classifies the work, routes it to the appropriate employee, and selects an approved executor. Coding is one specialization whose current provider is Codex; it is not a top-level product concept.
+
 The Access area provides five connected views:
 
 - Employees: effective access, inherited template permissions, project scope, temporary grants, restrictions, and pending requests;
@@ -95,13 +97,14 @@ The current version provides:
 - Tool-gateway enforcement requiring employee identity, active task assignment, task-scoped capability, policy permission, and audit evidence for protected asset operations;
 - A Codex-first coding executor for explicit development work orders, protected by source-code read, modify, and execute permissions;
 - Per-task detached Git worktrees, Codex workspace-write sandboxing, sanitized process environments, execution timeouts, bounded output, changed-file summaries, and evidence;
-- A Founder-facing Projects form for assigning a developer, codebase, related goal, priority, instructions, and acceptance criteria;
+- A Founder-facing general work-request form with automatic work-type classification and employee routing;
+- Honest execution coverage: software work can use Codex, while specialties without a connected executor remain `blocked`;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning only for explicit Codex coding tasks. It does not yet provide an LLM-backed CEO or planner, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, production-grade container isolation, output data-flow controls, restart-safe workers, project-scoped access, a review-and-apply workflow for worktree changes, or execution approval gates connected to external actions.
+The current version uses real model reasoning only when a software-development work request routes to Codex. Classification and routing are currently deterministic. It does not yet provide an LLM-backed CEO or planner, live market research, web retrieval, design generation, content publishing, sales execution, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, production-grade container isolation, output data-flow controls, restart-safe workers, project-scoped access, a review-and-apply workflow for worktree changes, or execution approval gates connected to external actions.
 
 ## Task state semantics
 
@@ -115,14 +118,15 @@ The UI and API should distinguish these states:
 - `failed`: execution attempted and failed;
 - `awaiting_approval`: a human decision is required.
 
-Planned tasks use deterministic local tools and must produce evidence. Custom tasks without an executor are blocked. The system still does not perform real external business actions until approved connectors and human approval gates are added.
+Goal-plan tasks use deterministic local tools and must produce evidence. A routed Founder work request remains `blocked` while it waits for an approved executor; `completed` is reserved for evidence-backed output. The system still does not perform real external business actions until approved connectors and human approval gates are added.
 
 ## Roadmap
 
-1. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex coding workflow.
-2. Replace the fixed planner with an LLM-backed planner that emits validated structured tasks while keeping Responses API support optional.
-3. Replace JSON persistence with SQLite or Postgres and add migrations.
-4. Replace the in-process scheduler with a durable queue and worker model.
-5. Add scoped connectors for GitHub review/push, research, browser automation, email, CRM, and publishing.
-6. Add authenticated runtime identity, secret brokering, role-based permissions, approval gates, and tenant isolation.
-7. Complete the confirmed AI Software Product Studio workflow before expanding into other organization templates and business functions.
+1. Add a provider-neutral execution contract and connect research, product, design, content, sales, and operations executors behind the general work-request router.
+2. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex software-development workflow.
+3. Replace the fixed planner and deterministic work classifier with an LLM-backed planner/router that emits validated structured tasks while keeping Responses API support optional.
+4. Replace JSON persistence with SQLite or Postgres and add migrations.
+5. Replace the in-process scheduler with a durable queue and worker model.
+6. Add scoped connectors for GitHub review/push, research, browser automation, email, CRM, and publishing.
+7. Add authenticated runtime identity, secret brokering, role-based permissions, approval gates, and tenant isolation.
+8. Complete the confirmed AI Software Product Studio workflow before expanding into other organization templates and business functions.

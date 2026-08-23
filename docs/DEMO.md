@@ -39,15 +39,15 @@ Open Access and show Employees, Assets, Policies, Templates, and Requests.
 
 Show an effective-access explanation or policy impact preview. Do not approve an external action during the recording.
 
-### 1:30–2:10 — Codex coding work order
+### 1:30–2:10 — General work request and routed execution
 
-Open Projects and select **New coding task**.
+Open Projects and select **New work request**.
 
-> The first real model-backed employee is a Codex-powered software engineer. The Founder selects a developer, protected codebase, priority, instructions, and acceptance criteria. Before Codex starts, the runtime requires read, modify, and execute permission on the source-code asset.
+> The Founder describes a desired business outcome rather than choosing a technical tool. The system classifies the request, assigns the appropriate employee, and selects an approved executor. Product, research, design, software, content, sales, operations, and general work share the same intake contract.
 
-Point out the Codex readiness badge and execution notice.
+Point out the execution-coverage badge and notice.
 
-> Every coding task runs in a detached Git worktree with workspace-only writes. This executor cannot push, merge, deploy, or use external services. Changed files and execution evidence are returned for review.
+> Codex is currently the only connected model executor, so software-development requests can run while other specialties remain visibly blocked with a next action. Every Codex task runs in a detached Git worktree with workspace-only writes and cannot push, merge, deploy, or use external services.
 
 Do not submit the form unless the demo uses a disposable repository and a deliberately small task.
 

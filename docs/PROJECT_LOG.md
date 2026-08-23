@@ -95,6 +95,14 @@ This file records dated implementation facts and decisions. Stable product defin
 - Added a truthful 2–3 minute demo script that distinguishes implemented behavior from roadmap capabilities.
 - Prepared the repository metadata and documentation for a public `v0.5.0` release.
 
+## 2026-08-23 — General work-request routing
+
+- Reframed Projects as a provider-neutral delivery workspace instead of a Codex-specific coding console.
+- Replaced the primary coding button and form with a general Founder work request covering outcome, deliverable, context, constraints, work type, priority, goal, and optional employee assignment.
+- Added deterministic classification across product, research, design, software, content, sales, operations, and general work, with role-aware automatic employee routing.
+- Kept Codex as the connected executor for software-development work while leaving unsupported specialties honestly `blocked` with an explicit next action.
+- Added a general `POST /api/work-requests` endpoint, routing metadata, execution-coverage messaging, and automated routing tests.
+
 ## Architecture snapshot
 
 ```text

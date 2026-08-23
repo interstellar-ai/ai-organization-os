@@ -3,12 +3,12 @@
 This is a runnable first version of an AI Organization OS. It validates the smallest goal-driven organization loop:
 
 ```text
-Founder intent → structured intake → goal workflow → employee execution → evidence → review
+Founder intent → work classification → employee routing → approved executor → evidence → review
 ```
 
-![AI Organization OS Projects workspace](docs/images/projects-codex-work-order.jpg)
+![AI Organization OS Projects workspace](docs/images/projects-general-work-request.jpg)
 
-AI Organization OS is available under the [Apache License 2.0](LICENSE). See the [2–3 minute demo walkthrough](docs/DEMO.md) for a concise tour of the Founder console, permission model, and protected Codex coding workflow.
+AI Organization OS is available under the [Apache License 2.0](LICENSE). See the [2–3 minute demo walkthrough](docs/DEMO.md) for a concise tour of the Founder console, permission model, general work routing, and protected Codex execution.
 
 Product documentation, project notes, operating rules, canonical addresses, and upload requirements are indexed in [`docs/PROJECT_KNOWLEDGE.md`](docs/PROJECT_KNOWLEDGE.md) and [`AGENTS.md`](AGENTS.md).
 
@@ -27,7 +27,7 @@ npm install -g @openai/codex
 codex login
 ```
 
-The Projects page reports whether Codex is ready. Creating a coding task is explicit: it assigns a build-capable employee and a protected source-code asset, creates a task-scoped permission lease, and runs `codex exec` in an isolated Git worktree with workspace-only writes.
+The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes every request to an appropriate employee. Software development can continue into protected Codex execution; other work types remain honestly `blocked` until their approved executors are connected.
 
 Run the test suite with:
 
@@ -52,6 +52,7 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Replan a goal | `POST /api/goals/:id/replan` |
 | Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
+| Classify and route a Founder work request | `POST /api/work-requests` |
 | Codex runtime status | `GET /api/codex/status` |
 | Create a protected coding task | `POST /api/coding/tasks` |
 | Basic memory | `GET /api/memories?q=...`, `POST /api/memories` |
@@ -71,7 +72,7 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 ## Current boundaries
 
 - The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority.
-- Planned tasks use local deterministic tools that produce structured outputs and evidence. Custom tasks without an executor are blocked instead of being falsely completed.
+- Goal workflows use local deterministic tools that produce structured outputs and evidence. Founder work requests without a connected executor remain `blocked` instead of being falsely completed.
 - Plan generation currently uses a fixed five-stage template and does not call an LLM.
 - JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
 - Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.

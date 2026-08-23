@@ -278,6 +278,48 @@ test("expired task capabilities are rejected without revealing asset details", a
   assert.throws(() => organization.createTask({ title: "Unknown assignee", assignedAgentId: "agent_missing" }), /Assigned employee not found/);
 });
 
+test("general work requests are classified, routed and blocked without a connected executor", () => {
+  const organization = setup();
+  const ceo = organization.createAgent({ name: "CEO", jobType: "ai_ceo", capabilities: ["iterate"] });
+  const designer = organization.createAgent({ name: "Designer", jobType: "product_designer", capabilities: ["design"] });
+  const task = organization.createWorkRequest({
+    title: "Redesign the onboarding experience",
+    instructions: "Create a clearer UI and user flow for first-time customers.",
+    deliverable: "An interface specification",
+    workType: "auto"
+  });
+  assert.equal(task.workType, "design");
+  assert.equal(task.assignedAgentId, designer.id);
+  assert.equal(task.status, "blocked");
+  assert.equal(task.toolName, null);
+  assert.equal(task.routing.mode, "automatic");
+  assert.equal(task.routing.requiredExecutor, "Design executor");
+  assert.match(task.nextAction, /approved design executor/);
+  assert.notEqual(task.assignedAgentId, ceo.id);
+  assert.equal(organization.list("events").some((event) => event.type === "work_request.routed" && event.payload.taskId === task.id), true);
+});
+
+test("software work requests route to a protected Codex task when the executor is connected", () => {
+  const codexExecutor = { async execute() { throw new Error("Execution is not part of this routing test"); } };
+  const organization = setup({ codexExecutor });
+  organization.createAgent({ name: "CEO", jobType: "ai_ceo", capabilities: ["iterate"] });
+  const engineer = organization.createAgent({ name: "Engineer", jobType: "software_engineer", capabilities: ["build"] });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code", workspacePath: ".", environment: "development" });
+  const task = organization.createWorkRequest({
+    title: "Fix the login bug",
+    instructions: "Update the application code and keep existing sessions valid.",
+    acceptanceCriteria: ["Tests pass"],
+    workType: "auto"
+  }, { codexAvailable: true });
+  assert.equal(task.workType, "software_development");
+  assert.equal(task.assignedAgentId, engineer.id);
+  assert.equal(task.status, "pending");
+  assert.equal(task.toolName, "code.codex");
+  assert.equal(task.input.assetId, repository.id);
+  assert.equal(task.requestSource, "founder_work_request");
+  assert.equal(task.routing.executorStatus, "connected");
+});
+
 test("a coding task reaches Codex only after all repository permissions pass", async () => {
   const calls = [];
   const codexExecutor = {

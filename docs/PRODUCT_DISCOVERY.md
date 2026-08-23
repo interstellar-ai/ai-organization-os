@@ -168,6 +168,14 @@ Codex is an execution provider, not the authority layer. AI Organization OS owns
 
 The executor may inspect and edit code and run local tests. It may not push, merge, deploy, use external services, or receive unrestricted credentials. Provider adapters remain replaceable so future Responses API, local-model, or third-party coding executors can implement the same work-order contract without changing organization policy semantics.
 
+### D-010 — General work requests above specialized executors
+
+Projects is a provider-neutral delivery workspace. Its primary action is **New work request**, not a provider- or profession-specific command. The Founder supplies the outcome, expected deliverable, context, constraints, acceptance criteria, priority, and optional related goal. Employee selection may be automatic or explicit.
+
+The routing layer classifies work into product strategy, research, design, software development, content and marketing, sales, operations, or general work. It assigns an appropriate employee and identifies the required executor and assets. A specialized field such as codebase selection appears only when relevant.
+
+Codex remains the first connected executor, but it is an implementation detail below software-development work orders. Requests whose approved executor is not connected remain `blocked` with a visible next action. They must not be falsely completed or silently handed to an unrelated tool.
+
 ## Shared product vocabulary
 
 | Concept | Meaning |

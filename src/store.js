@@ -58,6 +58,12 @@ function normalizeState(input) {
       executor: task.toolName || null,
       accessScope: [],
       accessExpiresAt: null,
+      requestSource: null,
+      workType: task.toolName === "code.codex" ? "software_development" : null,
+      deliverable: "",
+      context: "",
+      routing: null,
+      nextAction: null,
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"

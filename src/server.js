@@ -212,6 +212,9 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "plan") return json(response, 201, organization.planGoal(parts[2]));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "replan") return json(response, 201, organization.replanGoal(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/work-requests") {
+      return json(response, 201, organization.createWorkRequest(await body(request), { codexAvailable: codexExecutor.status().available }));
+    }
     if (request.method === "POST" && url.pathname === "/api/coding/tasks") {
       if (!codexExecutor.status().available) return json(response, 503, { error: `Codex executor unavailable: ${codexExecutor.status().reason}` });
       return json(response, 201, organization.createCodingTask(await body(request)));

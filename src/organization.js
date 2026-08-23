@@ -3,6 +3,70 @@ import crypto from "node:crypto";
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 const ACCESS_ACTIONS = ["read", "create", "modify", "execute", "share", "publish", "approve", "delete", "grant", "spend"];
+const WORK_TYPES = {
+  general: {
+    label: "General work",
+    capability: "iterate",
+    preferredJobTypes: ["ai_ceo", "project_manager", "operations_lead"],
+    requiredExecutor: "General-purpose agent executor"
+  },
+  product_strategy: {
+    label: "Product strategy",
+    capability: "design",
+    preferredJobTypes: ["product_manager", "ai_ceo"],
+    requiredExecutor: "Product planning executor"
+  },
+  research: {
+    label: "Research and analysis",
+    capability: "research",
+    preferredJobTypes: ["product_manager", "ai_ceo", "operations_lead"],
+    requiredExecutor: "Research executor"
+  },
+  design: {
+    label: "Design",
+    capability: "design",
+    preferredJobTypes: ["product_designer", "product_manager"],
+    requiredExecutor: "Design executor"
+  },
+  software_development: {
+    label: "Software development",
+    capability: "build",
+    preferredJobTypes: ["software_engineer", "technical_lead", "prototype_builder"],
+    requiredExecutor: "code.codex"
+  },
+  content_marketing: {
+    label: "Content and marketing",
+    capability: "design",
+    preferredJobTypes: ["operations_lead", "product_manager", "ai_ceo"],
+    requiredExecutor: "Content and publishing executor"
+  },
+  sales: {
+    label: "Sales",
+    capability: "research",
+    preferredJobTypes: ["operations_lead", "ai_ceo"],
+    requiredExecutor: "Sales and CRM executor"
+  },
+  operations: {
+    label: "Operations",
+    capability: "iterate",
+    preferredJobTypes: ["project_manager", "operations_lead", "ai_ceo"],
+    requiredExecutor: "Operations executor"
+  }
+};
+
+function classifyWorkType(value = "") {
+  const text = ` ${String(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  const rules = [
+    ["software_development", ["code", "coding", "software", "developer", "website", "application", "frontend", "backend", "api", "database", "repository", "bug", "login", "test"]],
+    ["design", ["design", "ui", "ux", "wireframe", "interface", "brand", "visual", "prototype"]],
+    ["research", ["research", "analyse", "analyze", "analysis", "market", "competitor", "investigate", "study"]],
+    ["sales", ["sales", "lead", "prospect", "customer", "crm", "pipeline"]],
+    ["content_marketing", ["content", "article", "campaign", "marketing", "launch", "social", "copywriting"]],
+    ["product_strategy", ["product", "feature", "roadmap", "requirement", "user story", "positioning"]],
+    ["operations", ["operation", "operations", "process", "workflow", "schedule", "coordinate", "finance", "budget"]]
+  ];
+  return rules.find(([, keywords]) => keywords.some((keyword) => text.includes(` ${keyword} `)))?.[0] || "general";
+}
 
 function required(value, name) {
   if (!value || typeof value !== "string" || !value.trim()) {
@@ -548,7 +612,7 @@ export class Organization {
       planCycle: Number.isFinite(input.planCycle) ? input.planCycle : 1,
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
-      status: "pending",
+      status: ["planned", "blocked"].includes(input.status) ? input.status : "pending",
       priority: Number.isFinite(input.priority) ? input.priority : 3,
       assignedAgentId: input.assignedAgentId || null,
       dependsOn: Array.isArray(input.dependsOn) ? input.dependsOn : [],
@@ -558,11 +622,17 @@ export class Organization {
       accessScope,
       accessExpiresAt,
       acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria : [],
+      requestSource: input.requestSource || null,
+      workType: input.workType || null,
+      deliverable: input.deliverable?.trim() || "",
+      context: input.context?.trim() || "",
+      routing: input.routing || null,
+      nextAction: input.nextAction?.trim() || null,
       evidence: [],
       attempts: 0,
       output: null,
       error: null,
-      blockedReason: null,
+      blockedReason: input.blockedReason?.trim() || null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -591,6 +661,16 @@ export class Organization {
       priority: Number.isFinite(Number(input.priority)) ? Number(input.priority) : 3,
       assignedAgentId: agent.id,
       toolName: "code.codex",
+      requestSource: input.requestSource || "direct_coding_task",
+      workType: input.workType || "software_development",
+      deliverable: input.deliverable || "A focused, tested code change",
+      context: input.context || "",
+      routing: input.routing || {
+        mode: input.assignedAgentId ? "manual" : "automatic",
+        requiredCapability: "build",
+        requiredExecutor: "code.codex",
+        executorStatus: "connected"
+      },
       input: { assetId: asset.id, instructions },
       accessScope: [{ assetId: asset.id, actions: ["read", "modify", "execute"] }],
       accessExpiresAt: input.accessExpiresAt || new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
@@ -598,6 +678,83 @@ export class Organization {
         ? input.acceptanceCriteria.map((item) => String(item).trim()).filter(Boolean)
         : ["The requested change is implemented", "Relevant local tests pass", "Changed files and remaining limitations are reported"]
     });
+  }
+
+  createWorkRequest(input = {}, options = {}) {
+    const instructions = required(input.instructions, "instructions");
+    const requestedType = input.workType?.trim() || "auto";
+    if (requestedType !== "auto" && !WORK_TYPES[requestedType]) throw new Error("Unknown work type");
+    const workType = requestedType === "auto"
+      ? classifyWorkType([input.title, instructions, input.deliverable, input.context].filter(Boolean).join(" "))
+      : requestedType;
+    const definition = WORK_TYPES[workType];
+    const agents = this.list("agents");
+    let agent = input.assignedAgentId ? agents.find((item) => item.id === input.assignedAgentId) : null;
+    if (input.assignedAgentId && !agent) throw new Error("Assigned employee not found");
+    if (!agent) {
+      agent = definition.preferredJobTypes.map((jobType) => agents.find((item) => item.jobType === jobType)).find(Boolean)
+        || agents.find((item) => item.capabilities.some((capability) => capability.toLowerCase() === definition.capability))
+        || agents[0];
+    }
+    if (!agent) throw new Error("No employee is available to receive this work request");
+
+    const routing = {
+      mode: input.assignedAgentId ? "manual" : "automatic",
+      requestedType,
+      classifiedType: workType,
+      typeLabel: definition.label,
+      requiredCapability: definition.capability,
+      requiredExecutor: definition.requiredExecutor,
+      executorStatus: "not_connected"
+    };
+    const base = {
+      goalId: input.goalId || null,
+      title: input.title?.trim() || instructions.slice(0, 80),
+      description: instructions,
+      instructions,
+      priority: Number.isFinite(Number(input.priority)) ? Number(input.priority) : 3,
+      assignedAgentId: agent.id,
+      acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria : [],
+      requestSource: "founder_work_request",
+      workType,
+      deliverable: input.deliverable || "",
+      context: input.context || "",
+      routing
+    };
+
+    if (workType === "software_development") {
+      const repositories = this.list("assets").filter((asset) => asset.type === "source_code" && asset.workspacePath);
+      const asset = input.assetId
+        ? repositories.find((item) => item.id === input.assetId)
+        : repositories.length === 1 ? repositories[0] : null;
+      const canExecute = Boolean(options.codexAvailable && asset);
+      if (canExecute) {
+        const task = this.createCodingTask({ ...base, assetId: asset.id, routing: { ...routing, executorStatus: "connected" } });
+        this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: "code.codex" });
+        return task;
+      }
+      const nextAction = asset
+        ? "Connect and authenticate the Codex runtime before starting execution."
+        : "Select a protected source-code asset before starting execution.";
+      const task = this.createTask({
+        ...base,
+        status: "blocked",
+        routing: { ...routing, executorStatus: asset ? "unavailable" : "needs_input" },
+        blockedReason: nextAction,
+        nextAction
+      });
+      this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: null });
+      return task;
+    }
+
+    const task = this.createTask({
+      ...base,
+      status: "blocked",
+      blockedReason: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`,
+      nextAction: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`
+    });
+    this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: null });
+    return task;
   }
 
   searchMemories(query = "") {
