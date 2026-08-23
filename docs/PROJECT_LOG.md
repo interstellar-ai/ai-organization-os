@@ -59,6 +59,16 @@ This file records dated implementation facts and decisions. Stable product defin
 - Kept project assignment out of the hiring form until the Project domain has a real data model.
 - Added automated coverage for template hiring previews and invalid manager references.
 
+## 2026-08-23 — Enforced Agent access boundary
+
+- Added a permission-aware asset catalog that exposes only sanitized metadata for assets an employee may use or request.
+- Added task access scopes and expiration timestamps as the first task-capability representation.
+- Added protected-tool enforcement across employee identity, task assignment, active task state, task scope, expiration, effective policy, temporary-grant consumption, and audit events.
+- Added protected `asset.inspect` and identity-aware `asset.catalog` tools as the first enforceable gateway examples.
+- Clarified in the Access UI that Job Templates define employees while Access Policies define permission rules.
+- Documented that authenticated runtime identity, process and network sandboxing, brokered credentials, and output data-flow controls remain future enforcement layers.
+- Added automated coverage for hidden unauthorized assets, missing identity, missing task scope, successful authorized execution, and expired capabilities.
+
 ## Architecture snapshot
 
 ```text

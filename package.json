@@ -1,6 +1,6 @@
 {
   "name": "ai-organization-os-mvp",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "description": "A dependency-free MVP for managing AI agents, goals, tasks, memories and tools.",

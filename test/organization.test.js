@@ -223,3 +223,57 @@ test("persistent policy access does not consume a redundant one-use grant", () =
   assert.equal(organization.list("accessRequests")[0].status, "approved");
   assert.equal(organization.list("accessRequests")[0].usesRemaining, 1);
 });
+
+test("authorized asset catalog hides assets outside an employee's policy scope", async () => {
+  const organization = setup();
+  const engineer = organization.createAgent({ name: "Engineer", jobType: "software_engineer", department: "Engineering" });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code", environment: "development" });
+  organization.createAsset({ name: "Finance vault", type: "financial_data", sensitivity: "restricted" });
+  organization.createPolicy({ name: "Engineering reads code", employeeJobType: "software_engineer", assetType: "source_code", actions: ["read"], effect: "allow" });
+  const result = await organization.tools.execute("asset.catalog", {}, { organization, agent: engineer });
+  assert.deepEqual(result.items.map((item) => item.id), [repository.id]);
+  assert.deepEqual(result.items[0].allowedActions, ["read"]);
+  assert.equal(result.items.some((item) => item.name === "Finance vault"), false);
+  await assert.rejects(() => organization.tools.execute("asset.catalog", {}, { organization }), /Tool identity required/);
+});
+
+test("tool gateway requires both policy access and an active task capability", async () => {
+  const organization = setup();
+  const engineer = organization.createAgent({ name: "Engineer", jobType: "software_engineer", department: "Engineering" });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code", environment: "development" });
+  organization.createPolicy({ name: "Engineering reads code", employeeJobType: "software_engineer", assetType: "source_code", actions: ["read"], effect: "allow" });
+  const blocked = organization.createTask({ title: "Inspect without scope", assignedAgentId: engineer.id, toolName: "asset.inspect", input: { assetId: repository.id } });
+  await assert.rejects(() => organization.executeTask(blocked.id), /Tool authorization denied/);
+  assert.equal(organization.getTask(blocked.id).status, "failed");
+  const authorized = organization.createTask({
+    title: "Inspect assigned repository",
+    assignedAgentId: engineer.id,
+    toolName: "asset.inspect",
+    input: { assetId: repository.id },
+    accessScope: [{ assetId: repository.id, actions: ["read"] }],
+    accessExpiresAt: new Date(Date.now() + 60_000).toISOString()
+  });
+  const completed = await organization.executeTask(authorized.id);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.output.asset.id, repository.id);
+  assert.equal(organization.list("events").some((event) => event.type === "access.denied" && event.payload.taskId === blocked.id), true);
+  assert.equal(organization.list("events").some((event) => event.type === "tool.authorized" && event.payload.taskId === authorized.id), true);
+});
+
+test("expired task capabilities are rejected without revealing asset details", async () => {
+  const organization = setup();
+  const engineer = organization.createAgent({ name: "Engineer", jobType: "software_engineer" });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code" });
+  organization.createPolicy({ name: "Engineering reads code", employeeJobType: "software_engineer", assetType: "source_code", actions: ["read"], effect: "allow" });
+  const task = organization.createTask({
+    title: "Expired inspection",
+    assignedAgentId: engineer.id,
+    toolName: "asset.inspect",
+    input: { assetId: repository.id },
+    accessScope: [{ assetId: repository.id, actions: ["read"] }],
+    accessExpiresAt: new Date(Date.now() - 60_000).toISOString()
+  });
+  await assert.rejects(() => organization.executeTask(task.id), (error) => error.message === "Tool authorization denied" && !error.message.includes(repository.name));
+  assert.throws(() => organization.createTask({ title: "Invalid lease", accessExpiresAt: "not-a-time" }), /valid timestamp/);
+  assert.throws(() => organization.createTask({ title: "Unknown assignee", assignedAgentId: "agent_missing" }), /Assigned employee not found/);
+});

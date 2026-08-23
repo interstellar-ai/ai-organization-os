@@ -348,7 +348,7 @@ export class Organization {
         return state;
       });
     }
-    const event = this.recordEvent("access.used", { agentId, assetId, action, grantId: grant?.id || null });
+    const event = this.recordEvent("access.used", { agentId, assetId, action, taskId: input.taskId || null, toolName: input.toolName || null, grantId: grant?.id || null });
     return { allowed: true, agentId, assetId, action, consumedGrantId: grant?.id || null, event };
   }
 
@@ -365,6 +365,68 @@ export class Organization {
       && (!request.expiresAt || new Date(request.expiresAt).getTime() > Date.now())
     );
     return accessForAgent(agent, assets, policies, approvedRequests);
+  }
+
+  authorizedAssetCatalog(agentId, query = "") {
+    const normalized = String(query || "").trim().toLowerCase();
+    return this.effectiveAccess(agentId).flatMap(({ asset, actions }) => {
+      const allowedActions = actions.filter((item) => item.effect === "allowed").map((item) => item.action);
+      const requestableActions = actions.filter((item) => item.effect === "approval_required").map((item) => item.action);
+      if (!allowedActions.length && !requestableActions.length) return [];
+      const searchable = [asset.name, asset.type, asset.owner, asset.environment, asset.description].join(" ").toLowerCase();
+      if (normalized && !searchable.includes(normalized)) return [];
+      return [{
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        owner: asset.owner,
+        sensitivity: asset.sensitivity,
+        environment: asset.environment,
+        externalImpact: asset.externalImpact,
+        allowedActions,
+        requestableActions
+      }];
+    });
+  }
+
+  authorizeToolCall(input = {}) {
+    const decision = {
+      agentId: input.agentId || null,
+      taskId: input.taskId || null,
+      assetId: input.assetId || null,
+      action: String(input.action || "").toLowerCase(),
+      toolName: input.toolName || null
+    };
+    let reason = null;
+    const agent = this.list("agents").find((item) => item.id === decision.agentId);
+    const task = this.list("tasks").find((item) => item.id === decision.taskId);
+    const asset = this.list("assets").find((item) => item.id === decision.assetId);
+    if (!agent) reason = "Unknown employee identity";
+    else if (!task) reason = "Unknown task context";
+    else if (!asset) reason = "Unknown or undiscoverable asset";
+    else if (task.assignedAgentId !== agent.id) reason = "Task is assigned to another employee";
+    else if (!["pending", "running"].includes(task.status)) reason = "Task is not active";
+    else if (task.accessExpiresAt && new Date(task.accessExpiresAt).getTime() <= Date.now()) reason = "Task capability expired";
+    else {
+      const scoped = (task.accessScope || []).find((item) => item.assetId === asset.id && Array.isArray(item.actions) && item.actions.includes(decision.action));
+      if (!scoped) reason = "Action is outside the task capability";
+      else {
+        const [entry] = this.effectiveAccess(agent.id, asset.id);
+        const permission = entry.actions.find((item) => item.action === decision.action);
+        if (permission?.effect !== "allowed") reason = permission?.effect === "approval_required" ? "Additional approval is required" : "Access policy denied the action";
+      }
+    }
+    if (reason) {
+      this.recordEvent("access.denied", { ...decision, reason });
+      throw new Error("Tool authorization denied");
+    }
+    return { allowed: true, ...decision };
+  }
+
+  completeAuthorizedToolCall(decision) {
+    const result = this.consumeAccess(decision);
+    this.recordEvent("tool.authorized", decision);
+    return result;
   }
 
   latestTasksForGoal(goalId) {
@@ -433,6 +495,8 @@ export class Organization {
         toolName: template.toolName,
         executor: template.toolName,
         input: { goalId },
+        accessScope: [],
+        accessExpiresAt: null,
         acceptanceCriteria: template.acceptanceCriteria,
         evidence: [],
         attempts: 0,
@@ -465,6 +529,16 @@ export class Organization {
 
   createTask(input = {}) {
     const timestamp = now();
+    if (input.assignedAgentId && !this.list("agents").some((agent) => agent.id === input.assignedAgentId)) throw new Error("Assigned employee not found");
+    const accessExpiresAt = input.accessExpiresAt || null;
+    if (accessExpiresAt && Number.isNaN(new Date(accessExpiresAt).getTime())) throw new Error("accessExpiresAt must be a valid timestamp");
+    const accessScope = Array.isArray(input.accessScope) ? input.accessScope.map((entry) => {
+      const assetId = required(entry.assetId, "accessScope.assetId");
+      if (!this.list("assets").some((asset) => asset.id === assetId)) throw new Error("Access scope asset not found");
+      const actions = Array.isArray(entry.actions) ? [...new Set(entry.actions.map((action) => String(action).toLowerCase()).filter((action) => ACCESS_ACTIONS.includes(action)))] : [];
+      if (!actions.length) throw new Error("accessScope.actions are required");
+      return { assetId, actions };
+    }) : [];
     const task = {
       id: id("task"),
       goalId: input.goalId || null,
@@ -478,6 +552,8 @@ export class Organization {
       toolName: input.toolName || null,
       executor: input.toolName || null,
       input: input.input ?? {},
+      accessScope,
+      accessExpiresAt,
       acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria : [],
       evidence: [],
       attempts: 0,
@@ -604,7 +680,8 @@ export class Organization {
       blockedReason: null
     });
     try {
-      const output = await this.tools.execute(task.toolName, task.input, { task, organization: this });
+      const agent = this.list("agents").find((item) => item.id === task.assignedAgentId) || null;
+      const output = await this.tools.execute(task.toolName, task.input, { task: this.getTask(task.id), agent, organization: this });
       const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
       if (!evidence.length) throw new Error("Executor returned no evidence");
       const result = this.updateTask(taskId, { status: "completed", output, evidence, error: null });

@@ -150,6 +150,16 @@ This workflow is the initial proving ground for the general organization operati
 
 The first workflow does not authorize unrestricted publishing, sales outreach, financial transfers, or automatic production deployment.
 
+### D-008 — Access enforcement is below the Agent reasoning layer
+
+Agents must not be trusted to remember or voluntarily follow access rules. A model expresses intent but cannot directly hold credentials or unrestricted access to filesystems, databases, browsers, networks, cloud accounts, or organizational search indexes.
+
+All protected operations pass through a Tool Gateway that derives employee and task identity from the runtime, checks the active task capability, evaluates access policy against the protected asset and requested action, executes only an approved operation, and records the result. Job templates define employee attributes; access policies use those attributes but remain the actual permission rules.
+
+Asset discovery is permission-aware. An Agent may discover sanitized metadata only for assets it is allowed to use or may request through an approval-required policy. Assets with no discoverable relationship remain absent from search results. Actual use is narrower than discovery and additionally requires an active, non-expired task scope.
+
+The production architecture also requires isolated execution, restricted filesystem mounts, network egress controls, brokered secrets, rate and budget limits, output data-flow checks, anomaly detection, and authenticated runtime identity. The local MVP implements the policy-aware catalog and protected-tool enforcement boundary first; it does not claim process-level sandboxing yet.
+
 ## Shared product vocabulary
 
 | Concept | Meaning |

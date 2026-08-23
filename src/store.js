@@ -56,6 +56,8 @@ function normalizeState(input) {
       attempts: 0,
       blockedReason: null,
       executor: task.toolName || null,
+      accessScope: [],
+      accessExpiresAt: null,
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"

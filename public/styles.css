@@ -196,6 +196,13 @@ input, select { min-height: 42px; padding: 0 12px; }
 .org-node strong, .org-node span { display: block; }
 .org-node strong { font-size: 11px; }
 .org-node span { margin-top: 4px; color: var(--faint); font-size: 9px; }
+.access-model { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 10px; align-items: center; margin-bottom: 18px; padding: 15px; border: 1px solid #cbd8cb; border-radius: 15px; background: var(--green-soft); }
+.access-model > div { min-height: 94px; padding: 11px; border-radius: 10px; background: rgba(255,255,255,.72); }
+.access-model span, .access-model strong { display: block; }
+.access-model span { color: var(--green-2); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.access-model strong { margin-top: 6px; font-size: 11px; }
+.access-model p { margin-top: 5px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.access-model > b { color: var(--green-2); font-size: 16px; }
 .tabbar { width: max-content; margin-bottom: 18px; }
 .access-tab { display: none; }
 .access-tab.active { display: block; }
@@ -302,6 +309,8 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr 1fr; }
+  .access-model { grid-template-columns: 1fr 1fr; }
+  .access-model > b { display: none; }
 }
 
 @media (max-width: 860px) {
@@ -322,6 +331,8 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .runtime-pill { display: none; }
   .welcome-row, .page-intro { align-items: flex-start; flex-direction: column; margin-bottom: 20px; }
   .page-actions { width: 100%; align-items: stretch; flex-direction: column; }
+  .tabbar { width: 100%; overflow-x: auto; }
+  .tabbar button { flex: 0 0 auto; }
   .welcome-row h2, .page-intro h2 { font-size: 34px; }
   .date-card { padding-left: 0; border-left: 0; }
   .home-layout, .metric-grid, .goal-grid, .employee-grid, .settings-grid, .form-grid { grid-template-columns: 1fr; }
@@ -336,6 +347,7 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .event-item { grid-template-columns: 1fr; gap: 5px; }
   .event-time { text-align: left; }
   .notice { align-items: flex-start; flex-direction: column; }
+  .access-model { grid-template-columns: 1fr; }
   .access-summary { grid-template-columns: 1fr 1fr; }
   .template-footer, .preview-access-row { align-items: stretch; flex-direction: column; }
   .preview-access-row > div { justify-content: flex-start; }

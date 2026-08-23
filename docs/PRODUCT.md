@@ -91,12 +91,14 @@ The current version provides:
 - A template-based hiring flow with manager selection and a pre-hire preview of inherited role data and default access;
 - Policy impact previews showing matched employees, assets, permission outcomes, and conflicts;
 - One-use and time-bound access grants with consumption and expiration records;
+- An authorized asset catalog that hides assets outside an employee's allowed or requestable scope;
+- Tool-gateway enforcement requiring employee identity, active task assignment, task-scoped capability, policy permission, and audit evidence for protected asset operations;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, project-scoped access, or execution approval gates connected to external actions.
+The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, process or network sandboxing, output data-flow controls, restart-safe workers, project-scoped access, or execution approval gates connected to external actions.
 
 ## Task state semantics
 

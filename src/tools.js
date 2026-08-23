@@ -16,19 +16,38 @@ export class ToolRegistry {
     this.tools = new Map();
   }
 
-  register(name, description, handler) {
-    this.tools.set(name, { name, description, handler });
+  register(name, description, handler, options = {}) {
+    this.tools.set(name, { name, description, handler, options });
     return this;
   }
 
   list() {
-    return [...this.tools.values()].map(({ name, description }) => ({ name, description }));
+    return [...this.tools.values()].map(({ name, description, options }) => ({
+      name,
+      description,
+      requiresIdentity: Boolean(options.requiresIdentity || options.authorize),
+      requiresTaskCapability: Boolean(options.authorize)
+    }));
   }
 
   async execute(name, input, context = {}) {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: ${name}`);
-    return tool.handler(input, context);
+    if ((tool.options.requiresIdentity || tool.options.authorize) && !context.agent) {
+      context.organization?.recordEvent("tool.denied", { toolName: name, reason: "Missing employee identity" });
+      throw new Error("Tool identity required");
+    }
+    const decision = tool.options.authorize
+      ? context.organization.authorizeToolCall({
+          ...tool.options.authorize(input || {}, context),
+          agentId: context.agent.id,
+          taskId: context.task?.id,
+          toolName: name
+        })
+      : null;
+    const output = await tool.handler(input, { ...context, authorization: decision });
+    if (decision) context.organization.completeAuthorizedToolCall(decision);
+    return output;
   }
 }
 
@@ -159,6 +178,28 @@ export function createDefaultTools(organization) {
       ok: true,
       input,
       evidence: [evidence("echo", "Echo tool executed successfully.", { input })]
-    }));
+    }))
+    .register("asset.catalog", "Discover only assets visible or requestable to the current employee", (input, { agent }) => {
+      const items = organization.authorizedAssetCatalog(agent.id, input?.query || "");
+      return {
+        items,
+        evidence: [evidence("authorized_asset_catalog", `Found ${items.length} assets within the employee's discoverable scope.`, { query: input?.query || "", assetIds: items.map((item) => item.id) })]
+      };
+    }, { requiresIdentity: true })
+    .register("asset.inspect", "Read protected asset metadata through policy and task-capability enforcement", (input) => {
+      const asset = organization.list("assets").find((item) => item.id === input.assetId);
+      return {
+        asset: {
+          id: asset.id,
+          name: asset.name,
+          type: asset.type,
+          owner: asset.owner,
+          sensitivity: asset.sensitivity,
+          environment: asset.environment,
+          description: asset.description
+        },
+        evidence: [evidence("authorized_asset_inspection", "Protected asset metadata was read through the tool gateway.", { assetId: asset.id })]
+      };
+    }, { authorize: (input) => ({ assetId: input.assetId, action: "read" }) });
   return registry;
 }

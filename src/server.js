@@ -167,10 +167,13 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.1", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.2", scheduler: "running", toolCount: tools.list().length });
     }
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
+    }
+    if (request.method === "GET" && url.pathname === "/api/assets/catalog") {
+      return json(response, 200, organization.authorizedAssetCatalog(url.searchParams.get("agentId"), url.searchParams.get("q") || ""));
     }
     if (request.method === "GET" && parts[1] && ["agents", "goals", "tasks", "memories", "assets", "policies"].includes(parts[1])) {
       const resource = parts[1];
@@ -214,11 +217,13 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
-      return json(response, 200, await tools.execute(input.name, input.input || {}, { organization }));
+      const task = input.taskId ? organization.getTask(input.taskId) : null;
+      const agent = input.agentId ? organization.list("agents").find((item) => item.id === input.agentId) || null : null;
+      return json(response, 200, await tools.execute(input.name, input.input || {}, { organization, task, agent }));
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {
-    const status = /required|not found|dependencies|Unknown tool|executor|evidence/i.test(error.message) ? 400 : 500;
+    const status = /required|not found|dependencies|Unknown tool|executor|evidence|authorization|identity|access scope/i.test(error.message) ? 400 : 500;
     return json(response, status, { error: error.message });
   }
 }

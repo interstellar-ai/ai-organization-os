@@ -39,6 +39,7 @@ npm test
 | Tool registry | `GET /api/tools`, `POST /api/tools/execute` |
 | Audit events | `GET /api/events` |
 | Asset registry | `GET/POST /api/assets` |
+| Authorized asset catalog | `GET /api/assets/catalog?agentId=...&q=...` |
 | Access policies | `GET/POST /api/policies` |
 | Preview policy impact | `POST /api/policies/preview` |
 | Effective employee access | `GET /api/access/effective?agentId=...&assetId=...` |
@@ -46,7 +47,7 @@ npm test
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
 | Consume authorized access | `POST /api/access/consume` |
 
-The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
+The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
 
 ## Current boundaries
 
@@ -58,10 +59,12 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 - One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
 - Job templates provide role inheritance. Project-scoped access remains deferred until the separate Project domain is implemented.
 - The Employees page can hire an employee from a job template after previewing inherited responsibilities, capabilities, matching policies, and default access. Role defaults are copied at hire time; template editing and employee overrides are not yet exposed.
+- Protected tools require employee identity, an active assigned task, a non-expired task capability, and an allowed access-policy decision. The authorized asset catalog hides assets outside the employee's allowed or requestable policy scope.
+- The current HTTP API is still a trusted single-Founder development surface without authentication. A production deployment must derive employee and task identity from signed runtime credentials rather than request fields.
 
 ## Iteration roadmap
 
-1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, one-use grants, time-bound grants, and access-consumption audit records.
+1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, temporary grants, authorized asset discovery, task capabilities, and enforced protected-tool checks.
 2. **v0.5: Model decision layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, and clarification protocol.
 3. **v0.6: Reliable execution layer** — Add SQLite/Postgres, queues, idempotency keys, timeouts, cancellation, retries, and execution approval gates.
 4. **v0.7: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
