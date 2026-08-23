@@ -15,25 +15,108 @@ organization.tools = tools;
 const scheduler = new Scheduler(organization);
 
 function seed() {
-  if (organization.list("agents").length > 0) return;
-  organization.createAgent({
-    name: "AI COO",
-    role: "coo",
-    description: "Coordinates goals, tasks and operational follow-through.",
+  const findAgent = (name) => organization.list("agents").find((agent) => agent.name === name);
+  const ensureAgent = (definition) => findAgent(definition.name) || organization.createAgent(definition);
+  const ceo = ensureAgent({
+    name: "AI CEO",
+    role: "ai_ceo",
+    jobType: "ai_ceo",
+    department: "Executive",
+    description: "Interprets Founder intent and coordinates the AI organization.",
+    responsibilities: ["Clarify intent", "Set execution boundaries", "Coordinate departments", "Report to the Founder"],
     capabilities: ["research", "design", "validate", "iterate"]
   });
-  organization.createAgent({
-    name: "AI Builder",
-    role: "worker",
-    description: "Builds prototypes and technical deliverables.",
+  const product = ensureAgent({
+    name: "Product Manager",
+    role: "product_manager",
+    jobType: "product_manager",
+    department: "Product",
+    managerId: ceo.id,
+    description: "Defines user outcomes, product scope and acceptance criteria.",
+    responsibilities: ["Product definition", "Requirements", "Acceptance criteria"],
+    capabilities: ["research", "design"]
+  });
+  const project = ensureAgent({
+    name: "Project Manager",
+    role: "project_manager",
+    jobType: "project_manager",
+    department: "Operations",
+    managerId: ceo.id,
+    description: "Plans milestones, assignments, dependencies and delivery risks.",
+    responsibilities: ["Planning", "Scheduling", "Escalation", "Cross-team coordination"],
+    capabilities: ["iterate", "validate"]
+  });
+  const technical = ensureAgent({
+    name: "Technical Lead",
+    role: "technical_lead",
+    jobType: "technical_lead",
+    department: "Engineering",
+    managerId: ceo.id,
+    description: "Owns technical design and engineering coordination.",
+    responsibilities: ["Architecture", "Technical planning", "Engineering review"],
+    capabilities: ["build", "validate"]
+  });
+  store.update((state) => {
+    const legacyCoo = state.agents.find((agent) => agent.name === "AI COO");
+    if (legacyCoo) Object.assign(legacyCoo, { jobType: "operations_lead", department: "Operations", managerId: ceo.id });
+    const legacyBuilder = state.agents.find((agent) => agent.name === "AI Builder");
+    if (legacyBuilder) Object.assign(legacyBuilder, { jobType: "prototype_builder", department: "Engineering", managerId: technical.id });
+    return state;
+  });
+  ensureAgent({
+    name: "Product Designer",
+    role: "product_designer",
+    jobType: "product_designer",
+    department: "Design",
+    managerId: product.id,
+    description: "Designs user flows, information architecture and interface behavior.",
+    responsibilities: ["User flows", "Interaction design", "Interface specification"],
+    capabilities: ["design"]
+  });
+  ensureAgent({
+    name: "Software Engineer",
+    role: "software_engineer",
+    jobType: "software_engineer",
+    department: "Engineering",
+    managerId: technical.id,
+    description: "Implements approved product and technical designs.",
+    responsibilities: ["Implementation", "Automated tests", "Technical evidence"],
     capabilities: ["build"]
   });
-  organization.writeMemory({
-    scope: "organization",
-    content: "Human founder approves high-impact external actions. MVP runs locally with JSON persistence.",
-    tags: ["policy", "safety"],
-    source: "seed"
+  ensureAgent({
+    name: "Quality Reviewer",
+    role: "quality_reviewer",
+    jobType: "quality_reviewer",
+    department: "Quality",
+    managerId: ceo.id,
+    description: "Independently reviews artifacts, evidence and acceptance criteria.",
+    responsibilities: ["Independent review", "Evidence validation", "Release recommendation"],
+    capabilities: ["validate"]
   });
+
+  if (!organization.list("memories").some((memory) => memory.tags?.includes("safety"))) {
+    organization.writeMemory({
+      scope: "organization",
+      content: "The Founder approves high-impact external actions. The local MVP does not perform external business actions.",
+      tags: ["policy", "safety"],
+      source: "seed"
+    });
+  }
+
+  const ensureAsset = (definition) => organization.list("assets").find((asset) => asset.name === definition.name) || organization.createAsset(definition);
+  ensureAsset({ name: "Product Knowledge Base", type: "document_collection", owner: "Product", sensitivity: "internal", environment: "workspace", description: "Approved product definitions and project knowledge." });
+  ensureAsset({ name: "Source Code Repository", type: "source_code", owner: "Engineering", sensitivity: "internal", environment: "development", description: "Application source code in the assigned project scope." });
+  ensureAsset({ name: "Local Runtime State", type: "runtime_data", owner: "Operations", sensitivity: "confidential", environment: "development", description: "Local goals, tasks, memory and audit data. Never uploaded to Git." });
+  ensureAsset({ name: "Public GitHub Repository", type: "publishing_destination", owner: "Founder", sensitivity: "public", environment: "external", externalImpact: "high", description: "Public source-code destination. Writes require explicit authorization." });
+
+  const ensurePolicy = (definition) => organization.list("policies").find((policy) => policy.name === definition.name) || organization.createPolicy(definition);
+  ensurePolicy({ name: "Executive reads organization knowledge", employeeJobType: "ai_ceo", assetType: "document_collection", actions: ["read"], effect: "allow" });
+  ensurePolicy({ name: "Product manages product knowledge", employeeJobType: "product_manager", assetType: "document_collection", actions: ["read", "create", "modify"], effect: "allow" });
+  ensurePolicy({ name: "Engineering develops source code", employeeJobType: "software_engineer", assetType: "source_code", assetEnvironment: "development", actions: ["read", "modify", "execute"], effect: "allow" });
+  ensurePolicy({ name: "Technical lead reviews source code", employeeJobType: "technical_lead", assetType: "source_code", actions: ["read", "modify", "execute", "approve"], effect: "allow" });
+  ensurePolicy({ name: "Quality independently validates source code", employeeJobType: "quality_reviewer", assetType: "source_code", actions: ["read", "execute", "approve"], effect: "allow" });
+  ensurePolicy({ name: "No employee deletes runtime state", employeeJobType: "*", assetType: "runtime_data", actions: ["delete"], effect: "deny" });
+  ensurePolicy({ name: "Public publishing requires explicit grant", employeeJobType: "*", assetType: "publishing_destination", actions: ["publish", "modify"], effect: "approval_required" });
 }
 
 seed();
@@ -52,9 +135,9 @@ async function body(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function serveDashboard(response) {
-  const file = fs.readFileSync(path.join(root, "..", "public", "index.html"));
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+function serveStatic(response, name, contentType) {
+  const file = fs.readFileSync(path.join(root, "..", "public", name));
+  response.writeHead(200, { "content-type": contentType });
   response.end(file);
 }
 
@@ -62,14 +145,16 @@ async function route(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const parts = url.pathname.split("/").filter(Boolean);
   try {
-    if (request.method === "GET" && url.pathname === "/") return serveDashboard(response);
+    if (request.method === "GET" && url.pathname === "/") return serveStatic(response, "index.html", "text/html; charset=utf-8");
+    if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
+    if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.2.0", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.3.0", scheduler: "running", toolCount: tools.list().length });
     }
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
     }
-    if (request.method === "GET" && parts[1] && ["agents", "goals", "tasks", "memories"].includes(parts[1])) {
+    if (request.method === "GET" && parts[1] && ["agents", "goals", "tasks", "memories", "assets", "policies"].includes(parts[1])) {
       const resource = parts[1];
       const items = resource === "memories"
         ? organization.searchMemories(url.searchParams.get("q") || "")
@@ -79,6 +164,12 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/events") {
       return json(response, 200, organization.list("events"));
     }
+    if (request.method === "GET" && url.pathname === "/api/access-requests") {
+      return json(response, 200, organization.list("accessRequests"));
+    }
+    if (request.method === "GET" && url.pathname === "/api/access/effective") {
+      return json(response, 200, organization.effectiveAccess(url.searchParams.get("agentId"), url.searchParams.get("assetId")));
+    }
     if (request.method === "GET" && url.pathname === "/api/tools") return json(response, 200, tools.list());
     if (request.method === "POST" && url.pathname === "/api/agents") return json(response, 201, organization.createAgent(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
@@ -87,6 +178,12 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/policies") return json(response, 201, organization.createPolicy(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/access-requests") return json(response, 201, organization.createAccessRequest(await body(request)));
+    if (request.method === "POST" && parts[1] === "access-requests" && parts[3] === "decision") {
+      return json(response, 200, organization.decideAccessRequest(parts[2], await body(request)));
+    }
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
       return json(response, 200, await tools.execute(input.name, input.input || {}, { organization }));

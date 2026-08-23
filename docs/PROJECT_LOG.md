@@ -30,13 +30,25 @@ This file records dated implementation facts and decisions. Stable product defin
 - Added [Product Discovery and Decision Record](PRODUCT_DISCOVERY.md) to keep active product decisions, assumptions, open questions, and risks separate from implementation history.
 - Excluded personal contributor details from the public product record.
 
+## 2026-08-23 — Founder console and access-control preview
+
+- Replaced the single developer dashboard with a responsive multi-page Founder Console.
+- Added a structured local command intake that explains assumptions and external-action boundaries before goal creation.
+- Added an AI Software Product Studio roster, employee directory, organization chart, role profiles, active work, and delivery history.
+- Added classified organizational assets, attribute-matched access policies, effective-access explanations, temporary grants, access requests, and Founder decisions.
+- Distinguished `allow`, `approval_required`, and `deny`; explicit deny takes precedence, while an approved request can satisfy an approval-required policy.
+- Added Goals, Projects, Knowledge, Reports, Audit, and Settings views backed by current local runtime data.
+- Added automated tests for policy matching, deny precedence, approval-required access, temporary grants, and access audit events.
+- Verified the live interface at <http://localhost:3333/> in the browser with no console errors.
+
 ## Architecture snapshot
 
 ```text
-public/index.html
-  → src/server.js
+public/index.html + public/styles.css + public/app.js
+  → src/server.js (HTTP API and static assets)
       → src/organization.js
           → Agent / Goal / Task / Memory domain objects
+          → Asset / Policy / Access Request domain objects
           → Scheduler
           → src/tools.js (allowlisted tools)
               → src/store.js (local JSON persistence)

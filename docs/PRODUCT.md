@@ -81,12 +81,18 @@ The current version provides:
 - Basic memory search and write operations;
 - A small allowlisted tool registry;
 - A local HTTP API and browser dashboard;
+- A multi-page Founder Command Center with Goals, Projects, Employees, Access, Approvals, Knowledge, Reports, Audit, and Settings views;
+- A deterministic local Founder-intent brief before goal creation;
+- A seeded AI Software Product Studio employee roster;
+- Employee directory and organization-chart views with role profiles and assigned work;
+- An asset registry, attribute-matched access policies, and effective-access explanations;
+- Structured access requests with local Founder approval or rejection;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, or human approval gates for external actions.
+The current version does not yet provide real LLM reasoning, live market research, web retrieval, X/Twitter publishing, revenue generation, durable multi-user storage, authentication, rate limiting, restart-safe workers, or execution approval gates connected to external actions.
 
 ## Task state semantics
 

@@ -72,3 +72,67 @@ test("unknown tools fail safely", async () => {
   await assert.rejects(() => organization.executeTask(task.id), /Unknown tool/);
   assert.equal(organization.list("tasks")[0].status, "failed");
 });
+
+test("access policies match employee and asset attributes with deny precedence", () => {
+  const organization = setup();
+  const engineer = organization.createAgent({
+    name: "Engineer",
+    role: "software_engineer",
+    jobType: "software_engineer",
+    department: "Engineering"
+  });
+  const repository = organization.createAsset({
+    name: "Development repository",
+    type: "source_code",
+    environment: "development"
+  });
+  organization.createPolicy({
+    name: "Engineering source access",
+    employeeJobType: "software_engineer",
+    assetType: "source_code",
+    actions: ["read", "modify", "delete"],
+    effect: "allow"
+  });
+  organization.createPolicy({
+    name: "Repository deletion denied",
+    employeeJobType: "*",
+    assetType: "source_code",
+    actions: ["delete"],
+    effect: "deny"
+  });
+
+  const [access] = organization.effectiveAccess(engineer.id, repository.id);
+  assert.equal(access.actions.find((item) => item.action === "read").effect, "allowed");
+  assert.equal(access.actions.find((item) => item.action === "modify").effect, "allowed");
+  assert.equal(access.actions.find((item) => item.action === "delete").effect, "denied");
+  assert.equal(access.actions.find((item) => item.action === "publish").effect, "not_granted");
+});
+
+test("approved access requests create an auditable temporary grant", () => {
+  const organization = setup();
+  const reviewer = organization.createAgent({ name: "Reviewer", jobType: "quality_reviewer" });
+  const repository = organization.createAsset({ name: "Repository", type: "source_code" });
+  organization.createPolicy({
+    name: "Repository reads require approval",
+    employeeJobType: "quality_reviewer",
+    assetType: "source_code",
+    actions: ["read"],
+    effect: "approval_required"
+  });
+  const [before] = organization.effectiveAccess(reviewer.id, repository.id);
+  assert.equal(before.actions.find((item) => item.action === "read").effect, "approval_required");
+  const request = organization.createAccessRequest({
+    requesterAgentId: reviewer.id,
+    assetId: repository.id,
+    action: "read",
+    reason: "Review the assigned artifact",
+    duration: "one review"
+  });
+
+  organization.decideAccessRequest(request.id, { decision: "approved", reason: "Required for independent review" });
+  const [access] = organization.effectiveAccess(reviewer.id, repository.id);
+  const read = access.actions.find((item) => item.action === "read");
+  assert.equal(read.effect, "allowed");
+  assert.equal(read.sources.some((source) => source.type === "temporary_grant"), true);
+  assert.equal(organization.list("events").some((event) => event.type === "access.approved"), true);
+});

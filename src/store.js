@@ -6,7 +6,10 @@ const EMPTY_STATE = {
   goals: [],
   tasks: [],
   memories: [],
-  events: []
+  events: [],
+  assets: [],
+  policies: [],
+  accessRequests: []
 };
 
 function normalizeState(input) {
@@ -16,6 +19,23 @@ function normalizeState(input) {
   state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
   state.memories = Array.isArray(state.memories) ? state.memories : [];
   state.events = Array.isArray(state.events) ? state.events : [];
+  state.assets = Array.isArray(state.assets) ? state.assets : [];
+  state.policies = Array.isArray(state.policies) ? state.policies.map((policy) => {
+    if (policy.name === "Public publishing requires explicit grant" && policy.effect === "deny") {
+      return { ...policy, effect: "approval_required", actions: (policy.actions || []).filter((action) => action !== "delete") };
+    }
+    return policy;
+  }) : [];
+  state.accessRequests = Array.isArray(state.accessRequests) ? state.accessRequests : [];
+
+  state.agents = state.agents.map((agent) => ({
+    jobType: agent.role || "worker",
+    department: "General",
+    managerId: null,
+    responsibilities: [],
+    projectIds: [],
+    ...agent
+  }));
 
   state.tasks = state.tasks.map((task) => {
     const normalized = {

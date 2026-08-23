@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+const ACCESS_ACTIONS = ["read", "create", "modify", "execute", "share", "publish", "approve", "delete", "grant", "spend"];
 
 function required(value, name) {
   if (!value || typeof value !== "string" || !value.trim()) {
@@ -54,8 +55,13 @@ export class Organization {
       id: id("agent"),
       name: required(input.name, "name"),
       role: input.role?.trim() || "worker",
+      jobType: input.jobType?.trim() || input.role?.trim() || "worker",
+      department: input.department?.trim() || "General",
+      managerId: input.managerId || null,
       description: input.description?.trim() || "",
+      responsibilities: Array.isArray(input.responsibilities) ? input.responsibilities : [],
       capabilities: Array.isArray(input.capabilities) ? input.capabilities : [],
+      projectIds: Array.isArray(input.projectIds) ? input.projectIds : [],
       status: "idle",
       createdAt: timestamp,
       updatedAt: timestamp
@@ -87,6 +93,148 @@ export class Organization {
     });
     this.recordEvent("goal.created", { goalId: goal.id, title: goal.title });
     return goal;
+  }
+
+  createAsset(input = {}) {
+    const timestamp = now();
+    const asset = {
+      id: id("asset"),
+      name: required(input.name, "name"),
+      type: required(input.type, "type"),
+      owner: input.owner?.trim() || "Organization",
+      projectId: input.projectId || null,
+      sensitivity: input.sensitivity?.trim() || "internal",
+      environment: input.environment?.trim() || "workspace",
+      externalImpact: input.externalImpact?.trim() || "none",
+      description: input.description?.trim() || "",
+      tags: Array.isArray(input.tags) ? input.tags : [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      state.assets.push(asset);
+      return state;
+    });
+    this.recordEvent("asset.created", { assetId: asset.id, type: asset.type, sensitivity: asset.sensitivity });
+    return asset;
+  }
+
+  createPolicy(input = {}) {
+    const actions = Array.isArray(input.actions)
+      ? input.actions.map((action) => String(action).toLowerCase()).filter((action) => ACCESS_ACTIONS.includes(action))
+      : [];
+    if (!actions.length) throw new Error("actions are required");
+    const timestamp = now();
+    const policy = {
+      id: id("policy"),
+      name: required(input.name, "name"),
+      employeeJobType: input.employeeJobType?.trim() || "*",
+      employeeDepartment: input.employeeDepartment?.trim() || "*",
+      assetType: input.assetType?.trim() || "*",
+      assetEnvironment: input.assetEnvironment?.trim() || "*",
+      effect: ["deny", "approval_required"].includes(input.effect) ? input.effect : "allow",
+      actions,
+      description: input.description?.trim() || "",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      state.policies.push(policy);
+      return state;
+    });
+    this.recordEvent("policy.created", { policyId: policy.id, effect: policy.effect, actions });
+    return policy;
+  }
+
+  createAccessRequest(input = {}) {
+    const agent = this.list("agents").find((item) => item.id === input.requesterAgentId);
+    if (!agent) throw new Error("Agent not found");
+    const asset = this.list("assets").find((item) => item.id === input.assetId);
+    if (!asset) throw new Error("Asset not found");
+    const action = required(input.action, "action").toLowerCase();
+    if (!ACCESS_ACTIONS.includes(action)) throw new Error("Unknown access action");
+    const timestamp = now();
+    const request = {
+      id: id("access"),
+      requesterAgentId: agent.id,
+      assetId: asset.id,
+      action,
+      reason: required(input.reason, "reason"),
+      duration: input.duration?.trim() || "one task",
+      risk: input.risk?.trim() || "medium",
+      status: "pending",
+      decisionReason: null,
+      decidedBy: null,
+      decidedAt: null,
+      expiresAt: input.expiresAt || null,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      state.accessRequests.push(request);
+      return state;
+    });
+    this.recordEvent("access.requested", { requestId: request.id, requesterAgentId: agent.id, assetId: asset.id, action });
+    return request;
+  }
+
+  decideAccessRequest(requestId, input = {}) {
+    const decision = input.decision === "approved" ? "approved" : input.decision === "rejected" ? "rejected" : null;
+    if (!decision) throw new Error("decision must be approved or rejected");
+    let updated;
+    this.store.update((state) => {
+      const request = state.accessRequests.find((item) => item.id === requestId);
+      if (!request) throw new Error("Access request not found");
+      if (request.status !== "pending") throw new Error("Access request is already decided");
+      Object.assign(request, {
+        status: decision,
+        decisionReason: input.reason?.trim() || "",
+        decidedBy: input.decidedBy?.trim() || "Founder",
+        decidedAt: now(),
+        updatedAt: now()
+      });
+      updated = request;
+      return state;
+    });
+    this.recordEvent(`access.${decision}`, { requestId, decidedBy: updated.decidedBy });
+    return updated;
+  }
+
+  effectiveAccess(agentId, assetId = null) {
+    const agent = this.list("agents").find((item) => item.id === agentId);
+    if (!agent) throw new Error("Agent not found");
+    const assets = this.list("assets").filter((asset) => !assetId || asset.id === assetId);
+    if (assetId && !assets.length) throw new Error("Asset not found");
+    const policies = this.list("policies");
+    const approvedRequests = this.list("accessRequests").filter((request) =>
+      request.requesterAgentId === agentId
+      && request.status === "approved"
+      && (!request.expiresAt || new Date(request.expiresAt).getTime() > Date.now())
+    );
+    return assets.map((asset) => {
+      const matched = policies.filter((policy) =>
+        ["*", agent.jobType, agent.role].includes(policy.employeeJobType)
+        && ["*", agent.department].includes(policy.employeeDepartment)
+        && ["*", asset.type].includes(policy.assetType)
+        && ["*", asset.environment].includes(policy.assetEnvironment)
+      );
+      const actions = ACCESS_ACTIONS.map((action) => {
+        const sources = matched.filter((policy) => policy.actions.includes(action));
+        const temporary = approvedRequests.filter((request) => request.assetId === asset.id && request.action === action);
+        const denied = sources.some((policy) => policy.effect === "deny");
+        const allowed = !denied && (sources.some((policy) => policy.effect === "allow") || temporary.length > 0);
+        const approvalRequired = !denied && !allowed && sources.some((policy) => policy.effect === "approval_required");
+        return {
+          action,
+          effect: denied ? "denied" : allowed ? "allowed" : approvalRequired ? "approval_required" : "not_granted",
+          sources: [
+            ...sources.map((policy) => ({ type: "policy", id: policy.id, name: policy.name, effect: policy.effect })),
+            ...temporary.map((request) => ({ type: "temporary_grant", id: request.id, name: request.duration, effect: "allow" }))
+          ]
+        };
+      });
+      return { asset, actions };
+    });
   }
 
   latestTasksForGoal(goalId) {
