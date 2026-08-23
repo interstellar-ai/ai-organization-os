@@ -167,7 +167,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.0", scheduler: "running", toolCount: tools.list().length });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.4.1", scheduler: "running", toolCount: tools.list().length });
     }
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
@@ -200,6 +200,10 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/job-templates/preview") {
+      const input = await body(request);
+      return json(response, 200, organization.previewAgentFromTemplate(input.templateId));
+    }
     if (request.method === "POST" && url.pathname === "/api/job-templates") return json(response, 201, organization.createJobTemplate(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/policies/preview") return json(response, 200, organization.previewPolicy(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/policies") return json(response, 201, organization.createPolicy(await body(request)));

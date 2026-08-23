@@ -88,6 +88,7 @@ The current version provides:
 - An asset registry, attribute-matched access policies, and effective-access explanations;
 - Structured access requests with local Founder approval or rejection;
 - Persistent job templates inherited by employee instances;
+- A template-based hiring flow with manager selection and a pre-hire preview of inherited role data and default access;
 - Policy impact previews showing matched employees, assets, permission outcomes, and conflicts;
 - One-use and time-bound access grants with consumption and expiration records;
 - JSON persistence for single-machine development;

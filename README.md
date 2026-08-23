@@ -29,6 +29,7 @@ npm test
 | Health check | `GET /api/health` |
 | Agent management | `GET/POST /api/agents` |
 | Job templates | `GET/POST /api/job-templates` |
+| Preview a template-based hire | `POST /api/job-templates/preview` |
 | Goal input | `GET/POST /api/goals` |
 | Generate a plan | `POST /api/goals/:id/plan` |
 | Replan a goal | `POST /api/goals/:id/replan` |
@@ -56,6 +57,7 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 - Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.
 - One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
 - Job templates provide role inheritance. Project-scoped access remains deferred until the separate Project domain is implemented.
+- The Employees page can hire an employee from a job template after previewing inherited responsibilities, capabilities, matching policies, and default access. Role defaults are copied at hire time; template editing and employee overrides are not yet exposed.
 
 ## Iteration roadmap
 

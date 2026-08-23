@@ -25,6 +25,28 @@ function policyMatches(policy, agent, asset) {
     && ["*", asset.environment].includes(policy.assetEnvironment);
 }
 
+function accessForAgent(agent, assets, policies, approvedRequests = []) {
+  return assets.map((asset) => {
+    const matched = policies.filter((policy) => policyMatches(policy, agent, asset));
+    const actions = ACCESS_ACTIONS.map((action) => {
+      const sources = matched.filter((policy) => policy.actions.includes(action));
+      const temporary = approvedRequests.filter((request) => request.assetId === asset.id && request.action === action);
+      const denied = sources.some((policy) => policy.effect === "deny");
+      const allowed = !denied && (sources.some((policy) => policy.effect === "allow") || temporary.length > 0);
+      const approvalRequired = !denied && !allowed && sources.some((policy) => policy.effect === "approval_required");
+      return {
+        action,
+        effect: denied ? "denied" : allowed ? "allowed" : approvalRequired ? "approval_required" : "not_granted",
+        sources: [
+          ...sources.map((policy) => ({ type: "policy", id: policy.id, name: policy.name, effect: policy.effect })),
+          ...temporary.map((request) => ({ type: "temporary_grant", id: request.id, name: request.grantType === "once" ? "One use" : `Until ${request.expiresAt}`, effect: "allow", usesRemaining: request.usesRemaining, expiresAt: request.expiresAt }))
+        ]
+      };
+    });
+    return { asset, actions };
+  });
+}
+
 export class Organization {
   constructor(store, tools) {
     this.store = store;
@@ -61,6 +83,7 @@ export class Organization {
       ? this.list("jobTemplates").find((item) => item.id === input.templateId)
       : null;
     if (input.templateId && !template) throw new Error("Job template not found");
+    if (input.managerId && !this.list("agents").some((item) => item.id === input.managerId)) throw new Error("Manager not found");
     const timestamp = now();
     const agent = {
       id: id("agent"),
@@ -84,6 +107,30 @@ export class Organization {
     });
     this.recordEvent("agent.created", { agentId: agent.id, name: agent.name });
     return agent;
+  }
+
+  previewAgentFromTemplate(templateId) {
+    const template = this.list("jobTemplates").find((item) => item.id === templateId);
+    if (!template) throw new Error("Job template not found");
+    const candidate = {
+      role: template.jobType,
+      jobType: template.jobType,
+      department: template.department
+    };
+    const access = accessForAgent(candidate, this.list("assets"), this.list("policies"));
+    const matchedPolicies = this.list("policies").filter((policy) =>
+      ["*", candidate.jobType, candidate.role].includes(policy.employeeJobType)
+      && ["*", candidate.department].includes(policy.employeeDepartment)
+    );
+    return {
+      template,
+      matchedPolicies: matchedPolicies.map(({ id: policyId, name, effect, actions, assetType, assetEnvironment }) => ({ policyId, name, effect, actions, assetType, assetEnvironment })),
+      access,
+      summary: access.reduce((counts, item) => {
+        for (const permission of item.actions) counts[permission.effect] = (counts[permission.effect] || 0) + 1;
+        return counts;
+      }, { allowed: 0, approval_required: 0, denied: 0, not_granted: 0 })
+    };
   }
 
   createJobTemplate(input = {}) {
@@ -317,25 +364,7 @@ export class Organization {
       && request.usesRemaining !== 0
       && (!request.expiresAt || new Date(request.expiresAt).getTime() > Date.now())
     );
-    return assets.map((asset) => {
-      const matched = policies.filter((policy) => policyMatches(policy, agent, asset));
-      const actions = ACCESS_ACTIONS.map((action) => {
-        const sources = matched.filter((policy) => policy.actions.includes(action));
-        const temporary = approvedRequests.filter((request) => request.assetId === asset.id && request.action === action);
-        const denied = sources.some((policy) => policy.effect === "deny");
-        const allowed = !denied && (sources.some((policy) => policy.effect === "allow") || temporary.length > 0);
-        const approvalRequired = !denied && !allowed && sources.some((policy) => policy.effect === "approval_required");
-        return {
-          action,
-          effect: denied ? "denied" : allowed ? "allowed" : approvalRequired ? "approval_required" : "not_granted",
-          sources: [
-            ...sources.map((policy) => ({ type: "policy", id: policy.id, name: policy.name, effect: policy.effect })),
-            ...temporary.map((request) => ({ type: "temporary_grant", id: request.id, name: request.grantType === "once" ? "One use" : `Until ${request.expiresAt}`, effect: "allow", usesRemaining: request.usesRemaining, expiresAt: request.expiresAt }))
-          ]
-        };
-      });
-      return { asset, actions };
-    });
+    return accessForAgent(agent, assets, policies, approvedRequests);
   }
 
   latestTasksForGoal(goalId) {

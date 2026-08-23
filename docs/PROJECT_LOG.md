@@ -51,6 +51,14 @@ This file records dated implementation facts and decisions. Stable product defin
 - Added tests for template inheritance, policy previews without persistence, one-use consumption, and time-bound expiration.
 - Kept project-scoped access explicitly deferred until the separate Project domain is implemented.
 
+## 2026-08-23 — Template-based employee hiring
+
+- Added a guided hiring flow to the Employees page and direct hiring actions on Access template cards.
+- Added a non-persistent pre-hire preview of inherited role, department, responsibilities, capabilities, matching policies, and default asset access.
+- Added manager selection with server-side manager validation and a post-hire employee profile showing its role source.
+- Kept project assignment out of the hiring form until the Project domain has a real data model.
+- Added automated coverage for template hiring previews and invalid manager references.
+
 ## Architecture snapshot
 
 ```text

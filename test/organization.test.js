@@ -175,6 +175,31 @@ test("policy preview reports affected employees, assets and conflicts without sa
   assert.equal(organization.list("policies").length, beforeCount);
 });
 
+test("hiring preview explains inherited role and default access without creating an employee", () => {
+  const organization = setup();
+  const template = organization.createJobTemplate({
+    name: "Software Engineer",
+    jobType: "software_engineer",
+    department: "Engineering",
+    responsibilities: ["Implementation"],
+    capabilities: ["build"]
+  });
+  organization.createAsset({ name: "Repository", type: "source_code", environment: "development" });
+  organization.createPolicy({ name: "Engineering build", employeeJobType: "software_engineer", assetType: "source_code", assetEnvironment: "development", actions: ["read", "modify"], effect: "allow" });
+  const beforeCount = organization.list("agents").length;
+  const preview = organization.previewAgentFromTemplate(template.id);
+  assert.equal(preview.template.id, template.id);
+  assert.equal(preview.matchedPolicies.length, 1);
+  assert.equal(preview.summary.allowed, 2);
+  assert.equal(preview.access[0].actions.find((item) => item.action === "modify").effect, "allowed");
+  assert.equal(organization.list("agents").length, beforeCount);
+});
+
+test("employee creation rejects an unknown manager", () => {
+  const organization = setup();
+  assert.throws(() => organization.createAgent({ name: "Engineer", managerId: "agent_missing" }), /Manager not found/);
+});
+
 test("time-bound grants receive a real expiration timestamp", () => {
   const organization = setup();
   const employee = organization.createAgent({ name: "Publisher", jobType: "publisher" });

@@ -191,6 +191,46 @@ function renderEmployees() {
   document.querySelector("#organizationChart").innerHTML = levels.join("");
   document.querySelector("#employeeDirectory").classList.toggle("hidden", state.employeeView !== "directory");
   document.querySelector("#organizationChart").classList.toggle("hidden", state.employeeView !== "organization");
+  populateHireSelectors();
+}
+
+function populateHireSelectors() {
+  const templateSelect = document.querySelector("#hireTemplateSelect");
+  const managerSelect = document.querySelector("#hireManagerSelect");
+  const previousTemplate = templateSelect.value;
+  const previousManager = managerSelect.value;
+  templateSelect.innerHTML = `<option value="">Choose a job template</option>${state.jobTemplates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)} · ${escapeHtml(template.department)}</option>`).join("")}`;
+  managerSelect.innerHTML = `<option value="">Founder</option>${state.agents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)} · ${escapeHtml(titleize(agent.jobType))}</option>`).join("")}`;
+  templateSelect.value = state.jobTemplates.some((template) => template.id === previousTemplate) ? previousTemplate : "";
+  managerSelect.value = state.agents.some((agent) => agent.id === previousManager) ? previousManager : "";
+}
+
+async function renderHirePreview() {
+  const templateId = document.querySelector("#hireTemplateSelect").value;
+  const previewElement = document.querySelector("#hirePreview");
+  if (!templateId) {
+    previewElement.innerHTML = empty("Choose a job template to preview the employee role and default access.");
+    return;
+  }
+  previewElement.innerHTML = empty("Calculating inherited role and access…");
+  try {
+    const preview = await api("/api/job-templates/preview", { method: "POST", body: JSON.stringify({ templateId }) });
+    const template = preview.template;
+    const affectedAssets = preview.access.filter((entry) => entry.actions.some((permission) => permission.effect !== "not_granted"));
+    previewElement.innerHTML = `<div class="hire-preview-header"><div><span class="section-kicker">EMPLOYEE PREVIEW</span><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.description || "Reusable employee role definition.")}</p></div><span class="status">${escapeHtml(template.department)}</span></div><div class="detail-grid"><div class="detail-field"><span>Job type</span><strong>${escapeHtml(titleize(template.jobType))}</strong></div><div class="detail-field"><span>Role source</span><strong>Inherited from template</strong></div></div><div class="preview-section"><h4>Responsibilities</h4>${template.responsibilities?.length ? `<ul>${template.responsibilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p>No responsibilities configured.</p>`}</div><div class="preview-section"><h4>Capabilities</h4><div class="action-list">${(template.capabilities || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("") || "None"}</div></div><div class="access-summary"><div><strong>${preview.summary.allowed}</strong><span>Allowed</span></div><div><strong>${preview.summary.approval_required}</strong><span>Need approval</span></div><div><strong>${preview.summary.denied}</strong><span>Denied</span></div><div><strong>${preview.matchedPolicies.length}</strong><span>Policy rules</span></div></div><div class="preview-section"><h4>Default access by asset</h4>${affectedAssets.length ? affectedAssets.map((entry) => `<div class="preview-access-row"><span>${escapeHtml(entry.asset.name)}</span><div>${entry.actions.filter((permission) => permission.effect !== "not_granted").map((permission) => `<b class="action-chip ${escapeHtml(permission.effect)}">${escapeHtml(permission.action)}</b>`).join("")}</div></div>`).join("") : `<p>No policy grants or restrictions match this role. Access will be denied by default.</p>`}</div>`;
+  } catch (error) {
+    previewElement.innerHTML = empty(error.message);
+  }
+}
+
+function openHireForm(templateId = "") {
+  showPage("employees");
+  const form = document.querySelector("#hireEmployeeForm");
+  form.classList.remove("hidden");
+  populateHireSelectors();
+  document.querySelector("#hireTemplateSelect").value = state.jobTemplates.some((template) => template.id === templateId) ? templateId : "";
+  renderHirePreview();
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function openEmployee(agentId) {
@@ -200,7 +240,8 @@ function openEmployee(agentId) {
   const tasks = state.tasks.filter((task) => task.assignedAgentId === agent.id);
   const completed = tasks.filter((task) => task.status === "completed");
   const evidence = completed.reduce((count, task) => count + (task.evidence?.length || 0), 0);
-  document.querySelector("#employeeDetail").innerHTML = `<div class="drawer-profile"><div class="employee-avatar">${escapeHtml(initials(agent.name))}</div><div><h2>${escapeHtml(agent.name)}</h2><div class="employee-role">${escapeHtml(titleize(agent.jobType))}</div><div class="employee-meta"><span>${escapeHtml(agent.department)}</span><span>${escapeHtml(titleize(employeeStatus(agent)))}</span></div></div></div><div class="drawer-section"><h4>Role charter</h4><p>${escapeHtml(agent.description || "No role charter provided.")}</p></div><div class="drawer-section"><h4>Organization</h4><div class="detail-grid"><div class="detail-field"><span>Reports to</span><strong>${escapeHtml(manager?.name || "Founder")}</strong></div><div class="detail-field"><span>Department</span><strong>${escapeHtml(agent.department)}</strong></div><div class="detail-field"><span>Completed work</span><strong>${completed.length}</strong></div><div class="detail-field"><span>Evidence</span><strong>${evidence}</strong></div></div></div><div class="drawer-section"><h4>Responsibilities</h4>${agent.responsibilities?.length ? `<ul>${agent.responsibilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p>No responsibilities recorded.</p>`}</div><div class="drawer-section"><h4>Capabilities</h4><div class="action-list">${(agent.capabilities || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("") || "None"}</div></div><div class="drawer-section"><h4>Current or latest work</h4><p>${escapeHtml(employeeWork(agent))}</p></div><button class="secondary-button" data-open-access="${escapeHtml(agent.id)}">View effective access</button>`;
+  const template = state.jobTemplates.find((item) => item.id === agent.templateId);
+  document.querySelector("#employeeDetail").innerHTML = `<div class="drawer-profile"><div class="employee-avatar">${escapeHtml(initials(agent.name))}</div><div><h2>${escapeHtml(agent.name)}</h2><div class="employee-role">${escapeHtml(titleize(agent.jobType))}</div><div class="employee-meta"><span>${escapeHtml(agent.department)}</span><span>${escapeHtml(titleize(employeeStatus(agent)))}</span></div></div></div><div class="drawer-section"><h4>Role source</h4><div class="setting-row"><span>Job template</span><strong>${escapeHtml(template?.name || "Custom role")}</strong></div><p>${template ? "Role, department, responsibilities and capabilities were inherited when this employee was hired." : "This employee was created without a job template."}</p></div><div class="drawer-section"><h4>Role charter</h4><p>${escapeHtml(agent.description || "No role charter provided.")}</p></div><div class="drawer-section"><h4>Organization</h4><div class="detail-grid"><div class="detail-field"><span>Reports to</span><strong>${escapeHtml(manager?.name || "Founder")}</strong></div><div class="detail-field"><span>Department</span><strong>${escapeHtml(agent.department)}</strong></div><div class="detail-field"><span>Completed work</span><strong>${completed.length}</strong></div><div class="detail-field"><span>Evidence</span><strong>${evidence}</strong></div></div></div><div class="drawer-section"><h4>Responsibilities</h4>${agent.responsibilities?.length ? `<ul>${agent.responsibilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p>No responsibilities recorded.</p>`}</div><div class="drawer-section"><h4>Capabilities</h4><div class="action-list">${(agent.capabilities || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("") || "None"}</div></div><div class="drawer-section"><h4>Current or latest work</h4><p>${escapeHtml(employeeWork(agent))}</p></div><button class="secondary-button" data-open-access="${escapeHtml(agent.id)}">View effective access</button>`;
   const drawer = document.querySelector("#employeeDrawer");
   drawer.classList.add("open");
   drawer.setAttribute("aria-hidden", "false");
@@ -269,7 +310,7 @@ function renderTemplates() {
   document.querySelector("#templateList").innerHTML = state.jobTemplates.length ? state.jobTemplates.map((template) => {
     const employees = state.agents.filter((agent) => agent.templateId === template.id || agent.jobType === template.jobType);
     const policies = state.policies.filter((policy) => ["*", template.jobType].includes(policy.employeeJobType) && ["*", template.department].includes(policy.employeeDepartment));
-    return `<article class="template-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(template.department)}</span><h3>${escapeHtml(template.name)}</h3></div><span class="status">${escapeHtml(titleize(template.jobType))}</span></div><p>${escapeHtml(template.description || "Reusable employee role definition.")}</p><div class="action-list">${(template.capabilities || []).map((capability) => `<span>${escapeHtml(capability)}</span>`).join("") || "No capabilities"}</div><div class="template-count">${employees.length} linked employees · ${policies.length} inherited policy rules</div></article>`;
+    return `<article class="template-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(template.department)}</span><h3>${escapeHtml(template.name)}</h3></div><span class="status">${escapeHtml(titleize(template.jobType))}</span></div><p>${escapeHtml(template.description || "Reusable employee role definition.")}</p><div class="action-list">${(template.capabilities || []).map((capability) => `<span>${escapeHtml(capability)}</span>`).join("") || "No capabilities"}</div><div class="template-footer"><div class="template-count">${employees.length} linked employees · ${policies.length} matching policy rules</div><button class="secondary-button" data-hire-template="${escapeHtml(template.id)}">Hire from template</button></div></article>`;
   }).join("") : empty("No job templates are configured.");
 }
 
@@ -448,6 +489,8 @@ document.addEventListener("click", (event) => {
   }
   const decision = event.target.closest("[data-access-decision]");
   if (decision) decideRequest(decision.dataset.requestId, decision.dataset.accessDecision, decision.dataset.grantType || "once");
+  const hireTemplate = event.target.closest("[data-hire-template]");
+  if (hireTemplate) openHireForm(hireTemplate.dataset.hireTemplate);
   const closeForm = event.target.closest("[data-close-form]");
   if (closeForm) document.querySelector(`#${closeForm.dataset.closeForm}`).classList.add("hidden");
 });
@@ -465,6 +508,9 @@ document.querySelectorAll("[data-employee-view]").forEach((button) => button.add
 }));
 document.querySelector("#employeeSearch").addEventListener("input", renderEmployees);
 document.querySelector("#departmentFilter").addEventListener("change", renderEmployees);
+document.querySelector("#showHireFormButton").addEventListener("click", () => openHireForm());
+document.querySelector("#cancelHireButton").addEventListener("click", () => document.querySelector("#hireEmployeeForm").classList.add("hidden"));
+document.querySelector("#hireTemplateSelect").addEventListener("change", renderHirePreview);
 document.querySelectorAll("[data-access-tab]").forEach((button) => button.addEventListener("click", () => {
   state.accessTab = button.dataset.accessTab;
   document.querySelectorAll("[data-access-tab]").forEach((item) => item.classList.toggle("active", item === button));
@@ -478,6 +524,20 @@ document.querySelector("#showRequestFormButton").addEventListener("click", () =>
 document.querySelector("#showMemoryFormButton").addEventListener("click", () => document.querySelector("#memoryForm").classList.remove("hidden"));
 document.querySelector("#refreshAuditButton").addEventListener("click", () => refreshData());
 document.querySelector("#previewPolicyButton").addEventListener("click", previewPolicyImpact);
+
+document.querySelector("#hireEmployeeForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  if (!values.managerId) delete values.managerId;
+  try {
+    const employee = await api("/api/agents", { method: "POST", body: JSON.stringify(values) });
+    event.currentTarget.reset();
+    event.currentTarget.classList.add("hidden");
+    toast(`${employee.name} was hired with template-based role and access defaults.`);
+    await refreshData({ quiet: true });
+    openEmployee(employee.id);
+  } catch (error) { toast(error.message, true); }
+});
 
 document.querySelector("#assetForm").addEventListener("submit", async (event) => {
   event.preventDefault();
