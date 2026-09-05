@@ -6,6 +6,7 @@ import { JsonStore } from "./store.js";
 import { Organization, Scheduler } from "./organization.js";
 import { createDefaultTools } from "./tools.js";
 import { CodexExecutor } from "./executors/codex.js";
+import { GeneralAgentExecutor } from "./executors/general.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(root, "..");
@@ -14,7 +15,8 @@ const store = new JsonStore(path.join(projectRoot, "data", "state.json"));
 const organization = new Organization(store, null);
 const codexExecutor = new CodexExecutor({ projectRoot });
 await codexExecutor.checkAvailability();
-const tools = createDefaultTools(organization, { codexExecutor });
+const generalExecutor = new GeneralAgentExecutor({ runtime: codexExecutor });
+const tools = createDefaultTools(organization, { codexExecutor, generalExecutor });
 organization.tools = tools;
 const scheduler = new Scheduler(organization);
 
@@ -139,6 +141,12 @@ function seed() {
   ensureAsset({ name: "Public GitHub Repository", type: "publishing_destination", owner: "Founder", sensitivity: "public", environment: "external", externalImpact: "high", description: "Public source-code destination. Writes require explicit authorization." });
 
   const ensurePolicy = (definition) => organization.list("policies").find((policy) => policy.name === definition.name) || organization.createPolicy(definition);
+  ensureAsset({ name: "General Agent Service", type: "agent_runtime", owner: "Operations", environment: "development",
+    tags: ["general-executor"], description: "Execute document work using the supplied brief. No organizational search or external actions." });
+  for (const jobType of ["ai_ceo", "product_manager", "project_manager", "product_designer", "operations_lead", "quality_reviewer"]) {
+    ensurePolicy({ name: `${jobType} uses General Agent Service`, employeeJobType: jobType, assetType: "agent_runtime",
+      assetEnvironment: "development", actions: ["execute"], effect: "allow" });
+  }
   ensurePolicy({ name: "Executive reads organization knowledge", employeeJobType: "ai_ceo", assetType: "document_collection", actions: ["read"], effect: "allow" });
   ensurePolicy({ name: "Product manages product knowledge", employeeJobType: "product_manager", assetType: "document_collection", actions: ["read", "create", "modify"], effect: "allow" });
   ensurePolicy({ name: "Engineering develops source code", employeeJobType: "software_engineer", assetType: "source_code", assetEnvironment: "development", actions: ["read", "modify", "execute"], effect: "allow" });
@@ -150,6 +158,7 @@ function seed() {
 
 seed();
 store.update((state) => state);
+organization.recoverInterruptedTasks();
 scheduler.start();
 
 const json = (response, status, payload) => {
@@ -174,11 +183,16 @@ async function route(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
   const parts = url.pathname.split("/").filter(Boolean);
   try {
+    if (request.method === "POST") {
+      const origin = request.headers.origin;
+      if (origin && ![`http://localhost:${port}`, `http://127.0.0.1:${port}`].includes(origin)) return json(response, 403, { error: "Origin is not allowed" });
+      if (!request.headers["content-type"]?.startsWith("application/json")) return json(response, 415, { error: "JSON request body is required" });
+    }
     if (request.method === "GET" && url.pathname === "/") return serveStatic(response, "index.html", "text/html; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.5.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status() });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.6.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
@@ -186,6 +200,15 @@ async function route(request, response) {
     }
     if (request.method === "GET" && url.pathname === "/api/assets/catalog") {
       return json(response, 200, organization.authorizedAssetCatalog(url.searchParams.get("agentId"), url.searchParams.get("q") || ""));
+    }
+    if (request.method === "GET" && parts[1] === "tasks" && parts[3] === "artifacts" && parts.length === 5) {
+      const task = organization.getTask(parts[2]);
+      if (!/^\d+$/.test(parts[4])) return json(response, 404, { error: "Artifact not found" });
+      const artifact = task.output?.artifacts?.[Number(parts[4])];
+      if (!artifact) return json(response, 404, { error: "Artifact not found" });
+      response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff",
+        "content-disposition": `attachment; filename="${artifact.filename}"`, "cache-control": "no-store" });
+      return response.end(artifact.content);
     }
     if (request.method === "GET" && parts[1] && ["agents", "goals", "tasks", "memories", "assets", "policies"].includes(parts[1])) {
       const resource = parts[1];
@@ -213,13 +236,17 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "replan") return json(response, 201, organization.replanGoal(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/work-requests") {
-      return json(response, 201, organization.createWorkRequest(await body(request), { codexAvailable: codexExecutor.status().available }));
+      return json(response, 201, organization.createWorkRequest(await body(request), { codexAvailable: codexExecutor.status().available, generalAvailable: generalExecutor.status().available }));
     }
     if (request.method === "POST" && url.pathname === "/api/coding/tasks") {
       if (!codexExecutor.status().available) return json(response, 503, { error: `Codex executor unavailable: ${codexExecutor.status().reason}` });
       return json(response, 201, organization.createCodingTask(await body(request)));
     }
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "run") return json(response, 200, await organization.executeTask(parts[2]));
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "feedback") {
+      return json(response, 200, organization.resumeGeneralTask(parts[2], await body(request), { generalAvailable: generalExecutor.status().available }));
+    }
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "accept") return json(response, 200, organization.acceptTask(parts[2]));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/job-templates/preview") {
@@ -236,6 +263,7 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
+      if (input.name === "agent.general") return json(response, 400, { error: "Use a work request to execute this managed tool" });
       const task = input.taskId ? organization.getTask(input.taskId) : null;
       const agent = input.agentId ? organization.list("agents").find((item) => item.id === input.agentId) || null : null;
       return json(response, 200, await tools.execute(input.name, input.input || {}, { organization, task, agent }));
@@ -251,7 +279,7 @@ const server = http.createServer((request, response) => {
   route(request, response);
 });
 
-server.listen(port, () => {
+server.listen(port, "127.0.0.1", () => {
   console.log(`AI Organization OS running at http://localhost:${port}`);
 });
 

@@ -103,6 +103,19 @@ This file records dated implementation facts and decisions. Stable product defin
 - Kept Codex as the connected executor for software-development work while leaving unsupported specialties honestly `blocked` with an explicit next action.
 - Added a general `POST /api/work-requests` endpoint, routing metadata, execution-coverage messaging, and automated routing tests.
 
+## 2026-09-05 — General Agent document execution
+
+- Added a replaceable general-work execution contract with Codex CLI as the first provider, using existing ChatGPT sign-in without a Responses API dependency.
+- Added actual Markdown, text, CSV, and JSON delivery, structured clarification or blocker outcomes, artifact validation, byte counts, hashes, and usage evidence.
+- Protected execution with employee capability, assigned running task, expiring runtime scope, asset policy, disabled general-agent tools, bounded output, timeout, and a temporary read-only workspace.
+- Added Projects delivery viewing and downloading, Founder feedback, prior-version history, and explicit acceptance. Home can send a confirmed brief to an AI CEO document task; autonomous planning is not implemented.
+- Added two-task concurrency, one running task per employee, duplicate-run refusal, and recovery of interrupted tasks to an explicit failed state.
+- Bound the local server to loopback and rejected cross-origin browser POST requests and non-JSON mutation requests. The application remains a trusted single-Founder development surface.
+- Verified all 28 automated tests, browser-script syntax, whitespace checks, and English-only and personal-information scans.
+- Verified real Codex execution through the browser with a fictional reading-list product brief, followed by a requested revision. The latest downloaded file contained 335 whitespace-delimited words, exactly three acceptance criteria, and the requested risks section. Its 1,991-byte content matched the stored SHA-256 hash; the first version remained in history.
+- Verified invalid artifact downloads returned 404 and a disallowed browser-origin acceptance request returned 403. The real demo remains awaiting Founder acceptance; acceptance and invalid-state rejection were verified in automated tests, not by accepting on behalf of the Founder.
+- Kept live research, external actions, autonomous multi-employee planning, independent quality evaluation, production isolation, and durable workers as explicit next iterations.
+
 ## Architecture snapshot
 
 ```text
@@ -114,6 +127,7 @@ public/index.html + public/styles.css + public/app.js
           → Scheduler
           → src/tools.js (allowlisted tools)
               → src/executors/codex.js (protected coding worktrees)
+              → src/executors/general.js (structured employee documents)
               → src/store.js (local JSON persistence)
 ```
 

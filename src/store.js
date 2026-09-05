@@ -64,6 +64,8 @@ function normalizeState(input) {
       context: "",
       routing: null,
       nextAction: null,
+      messages: [],
+      executionHistory: [],
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"

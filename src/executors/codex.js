@@ -20,7 +20,7 @@ function safeErrorMessage(value, maximum = 1_000) {
   return limitedText(text, maximum);
 }
 
-function safeEnvironment(source = process.env) {
+export function safeEnvironment(source = process.env) {
   const allowed = ["PATH", "HOME", "CODEX_HOME", "LANG", "LC_ALL", "TMPDIR", "TERM"];
   return Object.fromEntries(allowed.flatMap((name) => source[name] ? [[name, source[name]]] : []));
 }
@@ -122,6 +122,8 @@ function taskPrompt({ task, agent, asset }) {
     `Protected asset: ${asset.name}`,
     `Task: ${task.title}`,
     `Instructions: ${task.input.instructions}`,
+    `Expected deliverable: ${task.deliverable || "A tested code change"}`,
+    `Context and constraints: ${task.context || "None supplied"}`,
     "Acceptance criteria:",
     acceptance
   ].join("\n");
@@ -150,6 +152,10 @@ export class CodexExecutor {
         maxOutputBytes: 64_000
       });
       if (result.code !== 0) throw new Error(limitedText(result.stderr || result.stdout || "Codex exited with an error"));
+      const auth = await this.processRunner(this.command, ["login", "status"], {
+        cwd: this.projectRoot, env: safeEnvironment(), timeoutMs: 10_000, maxOutputBytes: 64_000
+      });
+      if (auth.code !== 0) throw new Error("Codex sign-in is required");
       this.cachedStatus = { provider: "codex-cli", available: true, version: limitedText(result.stdout, 120), reason: null };
     } catch (error) {
       const reason = error.code === "ENOENT" || error.message.includes("ENOENT")

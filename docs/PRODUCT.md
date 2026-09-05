@@ -98,31 +98,34 @@ The current version provides:
 - A Codex-first coding executor for explicit development work orders, protected by source-code read, modify, and execute permissions;
 - Per-task detached Git worktrees, Codex workspace-write sandboxing, sanitized process environments, execution timeouts, bounded output, changed-file summaries, and evidence;
 - A Founder-facing general work-request form with automatic work-type classification and employee routing;
-- Honest execution coverage: software work can use Codex, while specialties without a connected executor remain `blocked`;
+- Codex-backed general employees producing Markdown, text, CSV, and JSON documents from supplied context;
+- Clarifying questions, Founder replies, revision history, downloadable files, and explicit acceptance for general deliveries;
+- Permissioned general-runtime access, two-task concurrency, one running task per employee, and interrupted-run recovery;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning only when a software-development work request routes to Codex. Classification and routing are currently deterministic. It does not yet provide an LLM-backed CEO or planner, live market research, web retrieval, design generation, content publishing, sales execution, revenue generation, durable multi-user storage, authenticated runtime identity, rate limiting, production-grade container isolation, output data-flow controls, restart-safe workers, project-scoped access, a review-and-apply workflow for worktree changes, or execution approval gates connected to external actions.
+The current version uses real model reasoning for general document work and software development. Home can send a confirmed brief to the AI CEO for a document or clarifying questions; it does not yet create an autonomous multi-employee plan. Classification and routing remain deterministic. Live research, web retrieval, image generation, publishing, outbound sales, durable multi-user storage, authenticated runtime identity, budget enforcement, production-grade isolation, output data-flow controls, durable worker queues, project-scoped access, code review-and-apply, and external execution approval gates remain future work. See [General Agent execution](GENERAL_AGENT_EXECUTION.md).
 
 ## Task state semantics
 
 The UI and API should distinguish these states:
 
-- `planned`: the system created a task;
-- `queued`: the task is waiting for execution;
+- `pending`: the task is waiting for execution;
 - `running`: an executor is working;
-- `completed`: evidence-backed output exists;
+- `needs_input`: the employee has questions for the Founder;
+- `awaiting_review`: a general delivery exists and awaits acceptance or feedback;
+- `completed`: evidence-backed output exists; general deliveries additionally require Founder acceptance;
 - `blocked`: a dependency, permission, or missing input prevents progress;
 - `failed`: execution attempted and failed;
-- `awaiting_approval`: a human decision is required.
+- Access approvals are separate records; they are not delivery acceptance.
 
 Goal-plan tasks use deterministic local tools and must produce evidence. A routed Founder work request remains `blocked` while it waits for an approved executor; `completed` is reserved for evidence-backed output. The system still does not perform real external business actions until approved connectors and human approval gates are added.
 
 ## Roadmap
 
-1. Add a provider-neutral execution contract and connect research, product, design, content, sales, and operations executors behind the general work-request router.
+1. Extend the general document executor with permission-filtered context retrieval and independent artifact evaluation; keep external actions behind explicitly approved tools.
 2. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex software-development workflow.
 3. Replace the fixed planner and deterministic work classifier with an LLM-backed planner/router that emits validated structured tasks while keeping Responses API support optional.
 4. Replace JSON persistence with SQLite or Postgres and add migrations.

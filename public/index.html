@@ -62,6 +62,14 @@
         </form>
         <div id="executorRuntimeNotice" class="notice"><strong>Execution coverage</strong><span>Checking connected employee tools…</span></div>
         <div class="split-heading"><div><span class="section-kicker">WORK ORDERS</span><h3>Founder work requests</h3></div></div><div id="workRequestList" class="project-list"></div>
+        <article id="workDeliveryPanel" class="panel form-panel hidden" aria-label="Work delivery">
+          <div class="panel-heading"><h3>Delivery and conversation</h3><button id="closeWorkDelivery" class="text-button" type="button">Close</button></div>
+          <div id="workDeliveryContent"></div>
+          <form id="workFeedbackForm">
+            <label>Reply to the employee<textarea id="workFeedbackMessage" name="message" maxlength="20000" placeholder="Answer the questions or explain what should change."></textarea></label>
+            <div class="brief-actions"><button id="acceptWorkButton" type="button" class="secondary-button">Accept delivery</button><button id="sendWorkFeedback" type="submit" class="primary-button">Send and continue</button></div>
+          </form>
+        </article>
         <div class="split-heading"><div><span class="section-kicker">GOAL WORKFLOWS</span><h3>Organization delivery plans</h3></div></div><div id="projectList" class="project-list"></div>
       </section>
 

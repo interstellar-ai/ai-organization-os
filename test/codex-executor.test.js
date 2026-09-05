@@ -14,6 +14,7 @@ test("Codex executor uses non-interactive workspace sandboxing and returns safe 
   const processRunner = async (command, args, options) => {
     calls.push({ command, args, options });
     if (command === "codex" && args[0] === "--version") return { code: 0, stdout: "codex-cli 1.0.0\n", stderr: "" };
+    if (command === "codex" && args[0] === "login") return { code: 0, stdout: "Logged in", stderr: "" };
     if (command === "git" && args.includes("rev-parse")) return { code: 0, stdout: `${sourceRoot}\n`, stderr: "" };
     if (command === "git" && args.includes("worktree")) {
       fs.mkdirSync(args[5], { recursive: true });

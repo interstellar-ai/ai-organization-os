@@ -174,7 +174,11 @@ Projects is a provider-neutral delivery workspace. Its primary action is **New w
 
 The routing layer classifies work into product strategy, research, design, software development, content and marketing, sales, operations, or general work. It assigns an appropriate employee and identifies the required executor and assets. A specialized field such as codebase selection appears only when relevant.
 
-Codex remains the first connected executor, but it is an implementation detail below software-development work orders. Requests whose approved executor is not connected remain `blocked` with a visible next action. They must not be falsely completed or silently handed to an unrelated tool.
+Codex remains the first connected provider, but it is an implementation detail below work orders. Requests whose approved executor is not connected remain `blocked` with a visible next action. They must not be falsely completed or silently handed to an unrelated tool.
+
+### D-011 — General document delivery before external autonomy
+
+The general executor uses the existing Codex sign-in to produce actual documents for non-software work. It receives only supplied work context and has no organizational search or external-action tools. It can ask the Founder for missing information. Delivered files enter human review; feedback preserves versions, and only explicit acceptance completes the task. File hashes prove artifact integrity, not correctness. Independent review, automatic multi-employee planning, and permission-brokered external tools remain separate iterations.
 
 ## Shared product vocabulary
 

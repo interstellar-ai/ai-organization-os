@@ -293,8 +293,8 @@ test("general work requests are classified, routed and blocked without a connect
   assert.equal(task.status, "blocked");
   assert.equal(task.toolName, null);
   assert.equal(task.routing.mode, "automatic");
-  assert.equal(task.routing.requiredExecutor, "Design executor");
-  assert.match(task.nextAction, /approved design executor/);
+  assert.equal(task.routing.requiredExecutor, "agent.general");
+  assert.match(task.nextAction, /General Agent runtime/);
   assert.notEqual(task.assignedAgentId, ceo.id);
   assert.equal(organization.list("events").some((event) => event.type === "work_request.routed" && event.payload.taskId === task.id), true);
 });

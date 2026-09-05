@@ -5,6 +5,7 @@ This directory separates stable product knowledge from changing project notes.
 ## Read the right document
 
 - [Product document](PRODUCT.md): product purpose, principles, current scope, state semantics, and roadmap.
+- [General Agent execution](GENERAL_AGENT_EXECUTION.md): current provider contract, delivery workflow, safety limits, and next iterations.
 - [Product discovery and decisions](PRODUCT_DISCOVERY.md): confirmed product decisions, working assumptions, open questions, and design risks.
 - [Project log](PROJECT_LOG.md): canonical addresses, architecture snapshots, decisions, milestones, and verification records.
 - [Demo walkthrough](DEMO.md): privacy-safe 2–3 minute recording script for the current MVP.
@@ -26,6 +27,7 @@ This directory separates stable product knowledge from changing project notes.
 
 - License: [Apache License 2.0](../LICENSE)
 - Current public milestone: `v0.5.0`
+- Current development milestone: `v0.6.0` general document execution; not a published release tag.
 - Contributor workflow: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 
 The GitHub repository is the source of truth for code. The local JSON file is runtime state and must never be uploaded.

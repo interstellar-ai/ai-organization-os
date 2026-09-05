@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "summary", "questions", "limitations", "artifacts"],
+  "properties": {
+    "outcome": {"type": "string", "enum": ["delivered", "needs_input", "blocked"]},
+    "summary": {"type": "string"},
+    "questions": {"type": "array", "items": {"type": "string"}},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["filename", "content"],
+        "properties": {"filename": {"type": "string"}, "content": {"type": "string"}}
+      }
+    }
+  }
+}

@@ -596,6 +596,7 @@ export class Organization {
 
   createTask(input = {}) {
     const timestamp = now();
+    if (input.goalId) this.getGoal(input.goalId);
     if (input.assignedAgentId && !this.list("agents").some((agent) => agent.id === input.assignedAgentId)) throw new Error("Assigned employee not found");
     const accessExpiresAt = input.accessExpiresAt || null;
     if (accessExpiresAt && Number.isNaN(new Date(accessExpiresAt).getTime())) throw new Error("accessExpiresAt must be a valid timestamp");
@@ -628,6 +629,8 @@ export class Organization {
       context: input.context?.trim() || "",
       routing: input.routing || null,
       nextAction: input.nextAction?.trim() || null,
+      messages: [],
+      executionHistory: [],
       evidence: [],
       attempts: 0,
       output: null,
@@ -638,6 +641,7 @@ export class Organization {
     };
     this.store.update((state) => {
       state.tasks.push(task);
+      this.syncGoalStatus(state, task.goalId);
       return state;
     });
     this.recordEvent("task.created", { taskId: task.id, goalId: task.goalId });
@@ -692,11 +696,11 @@ export class Organization {
     let agent = input.assignedAgentId ? agents.find((item) => item.id === input.assignedAgentId) : null;
     if (input.assignedAgentId && !agent) throw new Error("Assigned employee not found");
     if (!agent) {
-      agent = definition.preferredJobTypes.map((jobType) => agents.find((item) => item.jobType === jobType)).find(Boolean)
-        || agents.find((item) => item.capabilities.some((capability) => capability.toLowerCase() === definition.capability))
-        || agents[0];
+      agent = definition.preferredJobTypes.map((jobType) => agents.find((item) => item.jobType === jobType && item.capabilities.includes(definition.capability))).find(Boolean)
+        || agents.find((item) => item.capabilities.includes(definition.capability));
     }
     if (!agent) throw new Error("No employee is available to receive this work request");
+    if (!agent.capabilities.includes(definition.capability)) throw new Error(`Assigned employee requires ${definition.capability} capability`);
 
     const routing = {
       mode: input.assignedAgentId ? "manual" : "automatic",
@@ -747,14 +751,60 @@ export class Organization {
       return task;
     }
 
+    const execution = this.generalTaskBinding(options);
     const task = this.createTask({
       ...base,
-      status: "blocked",
-      blockedReason: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`,
-      nextAction: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`
+      ...execution,
+      routing: { ...routing, requiredExecutor: "agent.general", executorStatus: execution.toolName ? "connected" : "unavailable" }
     });
-    this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: null });
+    this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: task.toolName });
     return task;
+  }
+
+  generalTaskBinding(options = {}) {
+    const asset = this.list("assets").find((item) => item.type === "agent_runtime" && item.tags?.includes("general-executor"));
+    const connected = Boolean(options.generalAvailable && asset && this.tools.list().some((tool) => tool.name === "agent.general"));
+    const nextAction = connected ? null : "Connect the General Agent runtime and its protected service asset, then retry.";
+    return { status: connected ? "pending" : "blocked", toolName: connected ? "agent.general" : null,
+      input: asset ? { assetId: asset.id } : {},
+      accessScope: asset ? [{ assetId: asset.id, actions: ["execute"] }] : [],
+      accessExpiresAt: new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+      nextAction, blockedReason: nextAction };
+  }
+
+  resumeGeneralTask(taskId, input = {}, options = {}) {
+    const task = this.getTask(taskId);
+    if (task.workType === "software_development" || task.requestSource !== "founder_work_request") throw new Error("Only general work requests support this action");
+    if (!["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)) throw new Error("Task is not waiting for feedback or retry");
+    const message = typeof input.message === "string" ? input.message.trim() : "";
+    if (["needs_input", "awaiting_review"].includes(task.status) && !message) throw new Error("Feedback message is required");
+    if (message.length > 20_000) throw new Error("Feedback is too long");
+    const binding = this.generalTaskBinding(options);
+    if (!binding.toolName) throw new Error(binding.nextAction);
+    const previous = { attempt: task.attempts, status: task.status, output: task.output, evidence: task.evidence, error: task.error, endedAt: now() };
+    const updated = this.updateTask(task.id, { ...binding, executor: binding.toolName, error: null, evidence: [],
+      messages: [...(task.messages || []), ...(message ? [{ role: "founder", content: message, createdAt: now() }] : [])],
+      executionHistory: [...(task.executionHistory || []), previous],
+      routing: { ...task.routing, requiredExecutor: "agent.general", executorStatus: "connected" } });
+    this.recordEvent("task.feedback", { taskId, hasMessage: Boolean(message) });
+    return updated;
+  }
+
+  acceptTask(taskId) {
+    const task = this.getTask(taskId);
+    if (task.status !== "awaiting_review" || task.output?.outcome !== "delivered" || !task.output.artifacts?.length || !task.evidence?.length) {
+      throw new Error("Task requires a delivered artifact before acceptance");
+    }
+    const updated = this.updateTask(taskId, { status: "completed", nextAction: null, acceptedAt: now() });
+    this.recordEvent("task.accepted", { taskId, decidedBy: "Founder", evidenceCount: task.evidence.length });
+    return updated;
+  }
+
+  recoverInterruptedTasks() {
+    for (const task of this.list("tasks").filter((item) => item.status === "running")) {
+      this.updateTask(task.id, { status: "failed", error: "Server restarted during execution. Review prior evidence before retrying." });
+      this.recordEvent("task.interrupted", { taskId: task.id });
+    }
   }
 
   searchMemories(query = "") {
@@ -793,7 +843,8 @@ export class Organization {
     const latest = tasks.filter((task) => (task.planCycle || 1) === latestCycle);
     if (!latest.length) goal.executionStatus = "not_started";
     else if (latest.some((task) => ["blocked", "failed"].includes(task.status))) goal.executionStatus = "blocked";
-    else if (latest.every((task) => task.status === "completed")) goal.executionStatus = "awaiting_review";
+    else if (latest.some((task) => task.status === "needs_input")) goal.executionStatus = "blocked";
+    else if (latest.every((task) => ["completed", "awaiting_review"].includes(task.status))) goal.executionStatus = "awaiting_review";
     else goal.executionStatus = "in_progress";
     goal.updatedAt = now();
   }
@@ -838,7 +889,12 @@ export class Organization {
 
   async executeTask(taskId) {
     const task = this.getTask(taskId);
+    if (!["pending", "blocked", "failed"].includes(task.status)) throw new Error("Task is already running or requires review before another execution");
     const state = this.store.read();
+    const running = state.tasks.filter((item) => item.status === "running");
+    if (running.length >= 2 || running.some((item) => task.assignedAgentId && item.assignedAgentId === task.assignedAgentId)) {
+      throw new Error("Execution capacity is busy; wait for the current work to finish");
+    }
     const blockedDependency = task.dependsOn.find((dependencyId) => {
       const dependency = state.tasks.find((item) => item.id === dependencyId);
       return !dependency || dependency.status !== "completed";
@@ -870,8 +926,15 @@ export class Organization {
       const output = await this.tools.execute(task.toolName, task.input, { task: this.getTask(task.id), agent, organization: this });
       const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
       if (!evidence.length) throw new Error("Executor returned no evidence");
-      const result = this.updateTask(taskId, { status: "completed", output, evidence, error: null });
-      this.recordEvent("task.completed", { taskId, evidenceCount: evidence.length });
+      const status = task.toolName === "agent.general"
+        ? { delivered: "awaiting_review", needs_input: "needs_input", blocked: "blocked" }[output.outcome]
+        : "completed";
+      if (!status) throw new Error("Executor returned an unknown outcome");
+      const nextAction = status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
+        : status === "needs_input" ? "Answer the employee's questions to continue." : null;
+      const result = this.updateTask(taskId, { status, output, evidence, error: null, nextAction,
+        blockedReason: status === "blocked" ? output.limitations.join(" ") : null });
+      this.recordEvent(`task.${status}`, { taskId, evidenceCount: evidence.length });
       return result;
     } catch (error) {
       const failed = this.updateTask(taskId, { status: "failed", error: error.message });
@@ -905,7 +968,9 @@ export class Scheduler {
       .filter((task) => task.status === "pending")
       .sort((a, b) => a.priority - b.priority);
     for (const task of tasks) {
+      if (this.running.size >= 2) break;
       if (this.running.has(task.id)) continue;
+      if (this.organization.list("tasks").some((item) => item.status === "running" && item.assignedAgentId && item.assignedAgentId === task.assignedAgentId)) continue;
       const state = this.organization.list("tasks");
       const ready = task.dependsOn.every((dependencyId) =>
         state.some((dependency) => dependency.id === dependencyId && dependency.status === "completed")

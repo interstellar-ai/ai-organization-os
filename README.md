@@ -20,14 +20,16 @@ npm start
 
 Open <http://localhost:3333>. On first launch, the server creates an example AI organization, classified assets, access policies, and one safety-policy memory. Runtime data is stored in `data/state.json`.
 
-To enable Codex-powered coding tasks, install the [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) and sign in with ChatGPT:
+To enable model-backed employee work, install the [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) and sign in with ChatGPT before starting the server:
 
 ```bash
 npm install -g @openai/codex
 codex login
 ```
 
-The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes every request to an appropriate employee. Software development can continue into protected Codex execution; other work types remain honestly `blocked` until their approved executors are connected.
+The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes requests to an employee. Non-software employees use Codex to produce actual text documents, ask clarifying questions, or report a blocker. Software work uses the separate protected coding executor. No separately billed Responses API integration is required; Codex account usage limits still apply.
+
+Try **Projects → New work request** with a small product brief or content draft. Open **Open work and delivery** to read or download the returned files, send feedback, and **Accept delivery** when satisfied. A general task stays `awaiting_review` until accepted. Home's confirmed brief also creates a general AI CEO work request. See [General Agent execution](docs/GENERAL_AGENT_EXECUTION.md) for the contract and boundaries.
 
 Run the test suite with:
 
@@ -53,6 +55,9 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
 | Classify and route a Founder work request | `POST /api/work-requests` |
+| Reply, request revision, or retry general work | `POST /api/tasks/:id/feedback` |
+| Accept a general delivery | `POST /api/tasks/:id/accept` |
+| Download a current artifact | `GET /api/tasks/:id/artifacts/:index` |
 | Codex runtime status | `GET /api/codex/status` |
 | Create a protected coding task | `POST /api/coding/tasks` |
 | Basic memory | `GET /api/memories?q=...`, `POST /api/memories` |
@@ -67,13 +72,15 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
 | Consume authorized access | `POST /api/access/consume` |
 
-The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
+The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, `agent.general`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. `agent.general` can only run through its assigned running task. Every planned task must produce evidence before it can become `completed`.
 
 ## Current boundaries
 
-- The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority.
+- The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority, with at most two running tasks and one per employee. Interrupted tasks become failed on restart and require an explicit retry.
 - Goal workflows use local deterministic tools that produce structured outputs and evidence. Founder work requests without a connected executor remain `blocked` instead of being falsely completed.
 - Plan generation currently uses a fixed five-stage template and does not call an LLM.
+- General execution returns Markdown, text, CSV, or JSON from supplied context. It does not retrieve private assets or memories automatically, browse, send messages, publish, or generate images. Design output is a textual specification; research is analysis of supplied material or labeled general knowledge.
+- General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct; Founder review is required. Feedback preserves prior versions.
 - JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
 - Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.
 - One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
@@ -82,13 +89,13 @@ The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, 
 - Protected tools require employee identity, an active assigned task, a non-expired task capability, and an allowed access-policy decision. The authorized asset catalog hides assets outside the employee's allowed or requestable policy scope.
 - `code.codex` requires `read`, `modify`, and `execute` permission on the assigned source-code asset before Codex starts. Each run uses a detached local Git worktree, the `workspace-write` Codex sandbox, a sanitized child-process environment, bounded output, and a timeout.
 - Codex coding tasks cannot push, merge or deploy through this executor. The current version records changed files and execution evidence, but does not yet provide a Founder review-and-apply workflow or automatic worktree cleanup.
-- The current HTTP API is still a trusted single-Founder development surface without authentication. A production deployment must derive employee and task identity from signed runtime credentials rather than request fields.
+- The HTTP server binds to loopback and checks browser POST origins and JSON content types. It is still a trusted single-Founder development surface without authentication, not a production security boundary. A production deployment must derive identity from signed runtime credentials and enforce process, network, and tenant isolation.
 
 ## Iteration roadmap
 
 1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, temporary grants, authorized asset discovery, task capabilities, and enforced protected-tool checks.
 2. **v0.5: Codex-first coding executor** — Add protected Codex work orders, isolated Git worktrees, runtime health, evidence, and a Founder-facing assignment form.
-3. **v0.6: Model decision and reliable execution layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, SQLite/Postgres, queues, idempotency, cancellation, retries, and execution approval gates.
+3. **v0.6: General document execution** — Codex-backed employees, validated deliverables, clarification, revision history, human acceptance, bounded concurrency, and restart recovery. An LLM-backed planner/router, database-backed queue, cancellation, budgets, and independent review remain next steps.
 4. **v0.7: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
 5. **v0.8: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
 6. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, budget controls, compliance, and observability.

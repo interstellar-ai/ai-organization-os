@@ -15,6 +15,8 @@ const state = {
   selectedAssetId: null,
   pendingIntent: null
 };
+let selectedWorkTaskId = null;
+let deliveryVersion = "";
 
 const pageTitles = {
   home: "Founder Command Center",
@@ -105,7 +107,7 @@ function goalCard(goal) {
 
 function renderHome() {
   const pending = state.accessRequests.filter((request) => request.status === "pending");
-  const blocked = state.tasks.filter((task) => ["blocked", "failed"].includes(task.status));
+  const blocked = state.tasks.filter((task) => ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status));
   const reviews = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_review");
   const completed = state.tasks.filter((task) => task.status === "completed").length;
   const evidence = state.tasks.reduce((total, task) => total + (task.evidence?.length || 0), 0);
@@ -119,7 +121,7 @@ function renderHome() {
 
   const attention = [
     ...pending.map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: assetById(request.assetId)?.name || "Unknown asset", action: "Approval" })),
-    ...blocked.slice(0, 3).map((task) => ({ signal: "red", title: task.title, note: task.blockedReason || task.error || "Execution is blocked", action: "Blocked" })),
+    ...blocked.slice(0, 3).map((task) => ({ signal: "red", title: task.title, note: task.blockedReason || task.error || task.nextAction || "Execution needs attention", action: task.status === "awaiting_review" ? "Review" : task.status === "needs_input" ? "Reply" : "Blocked" })),
     ...reviews.slice(0, 3).map((goal) => ({ signal: "", title: goal.title, note: `${goal.progress.completed} tasks completed with evidence`, action: "Review" }))
   ].slice(0, 6);
   document.querySelector("#attentionList").innerHTML = attention.length
@@ -145,10 +147,10 @@ function renderGoals() {
 function renderProjects() {
   const codex = state.health?.codex || { available: false, reason: "Codex status is unavailable" };
   const statusBadge = document.querySelector("#codexStatusBadge");
-  statusBadge.textContent = codex.available ? "1 executor connected · Codex" : "No model executor connected";
+  statusBadge.textContent = codex.available ? "AI employees ready" : "AI runtime unavailable";
   statusBadge.classList.toggle("warning", !codex.available);
   document.querySelector("#executorRuntimeNotice").innerHTML = codex.available
-    ? `<strong>General intake with one live executor</strong><span>All work types can be classified and routed. Software development can run through protected Codex; other specialties remain blocked until their approved executors are connected.</span>`
+    ? `<strong>Work, review and continue</strong><span>Employees can deliver product briefs, analysis of supplied material, design specifications, content drafts and operating plans. Open a request to read its files, answer questions or accept delivery. Live web research and external actions are not connected.</span>`
     : `<strong>General intake is ready; execution is limited</strong><span>Requests can be classified and assigned, but model-backed work remains blocked until an approved executor is connected. ${escapeHtml(codex.reason || "Codex is not available.")}</span>`;
 
   const employees = [...state.agents].sort((left, right) => left.department.localeCompare(right.department) || left.name.localeCompare(right.name));
@@ -171,12 +173,12 @@ function renderProjects() {
     const agent = agentById(task.assignedAgentId);
     const goal = state.goals.find((item) => item.id === task.goalId);
     const changedFiles = task.output?.changedFiles || [];
-    const result = task.status === "completed"
+    const result = ["completed", "awaiting_review", "needs_input"].includes(task.status)
       ? task.output?.summary || "The assigned executor completed this work order."
       : task.error || task.blockedReason || task.nextAction || (task.status === "running" ? "The assigned employee is working with an approved executor." : "Waiting for the scheduler.");
     const typeLabel = task.routing?.typeLabel || (task.workType ? titleize(task.workType) : "Software development");
     const executor = task.executor || task.routing?.requiredExecutor || "Executor not selected";
-    return `<article class="project-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(typeLabel)}</span><h3>${escapeHtml(task.title)}</h3></div><span class="status ${escapeHtml(task.status)}">${escapeHtml(titleize(task.status))}</span></div><p>${escapeHtml(result)}</p>${task.deliverable ? `<div class="work-deliverable"><span>Expected deliverable</span><strong>${escapeHtml(task.deliverable)}</strong></div>` : ""}<div class="goal-meta"><span>${escapeHtml(agent?.name || "Unassigned")}</span><span>${escapeHtml(goal?.title || "Independent work")}</span><span>${escapeHtml(executor)}</span><span>${task.evidence?.length || 0} evidence records</span></div>${changedFiles.length ? `<div class="memory-tags">${changedFiles.map((file) => `<span class="tag">${escapeHtml(file)}</span>`).join("")}</div>` : ""}</article>`;
+    return `<article class="project-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(typeLabel)}</span><h3>${escapeHtml(task.title)}</h3></div><span class="status ${escapeHtml(task.status)}">${escapeHtml(titleize(task.status))}</span></div><p>${escapeHtml(result)}</p>${task.deliverable ? `<div class="work-deliverable"><span>Expected deliverable</span><strong>${escapeHtml(task.deliverable)}</strong></div>` : ""}<div class="goal-meta"><span>${escapeHtml(agent?.name || "Unassigned")}</span><span>${escapeHtml(goal?.title || "Independent work")}</span><span>${escapeHtml(executor)}</span><span>${task.evidence?.length || 0} evidence records</span></div>${changedFiles.length ? `<div class="memory-tags">${changedFiles.map((file) => `<span class="tag">${escapeHtml(file)}</span>`).join("")}</div>` : ""}<div class="brief-actions"><button class="secondary-button" data-work-task="${escapeHtml(task.id)}">Open work and delivery</button></div></article>`;
   }).join("") : empty("No Founder work request has been created yet.");
 
   document.querySelector("#projectList").innerHTML = state.goalSummaries.length
@@ -187,17 +189,37 @@ function renderProjects() {
       return `<article class="project-card"><div class="goal-top"><div><span class="section-kicker">GOAL WORKFLOW</span><h3>${escapeHtml(goal.title)}</h3></div><span class="status ${escapeHtml(goal.executionStatus)}">${escapeHtml(titleize(goal.executionStatus))}</span></div><p>${escapeHtml(goal.description || "Workflow generated from a Founder goal.")}</p><div class="progress"><i style="width:${goal.progress.percent}%"></i></div><div class="goal-meta"><span>${goal.progress.total} work orders</span><span>${team.length} assigned employees</span><span>${blocked} blocked</span><span>Plan cycle ${Math.max(0, ...goal.tasks.map((task) => task.planCycle || 1))}</span></div><div class="project-team">${team.length ? team.map((agent) => `<span class="mini-avatar" title="${escapeHtml(agent.name)}">${escapeHtml(initials(agent.name))}</span>`).join("") : `<span class="goal-meta">No team assigned</span>`}</div></article>`;
     }).join("")
     : empty("No goal workflows exist yet.");
+  renderWorkDelivery();
+}
+
+function renderWorkDelivery() {
+  const task = state.tasks.find((item) => item.id === selectedWorkTaskId);
+  document.querySelector("#workDeliveryPanel").classList.toggle("hidden", !task);
+  if (!task) { deliveryVersion = ""; return; }
+  const version = JSON.stringify(task);
+  if (version === deliveryVersion) return;
+  deliveryVersion = version;
+  const output = task.output || {};
+  const list = (title, items = []) => items.length ? `<h4>${title}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "";
+  const files = (artifacts = [], download = false) => artifacts.map((artifact, index) => `<details class="delivery-file"><summary>${escapeHtml(artifact.filename)}${download ? ` · ${artifact.bytes} bytes` : ""}</summary><pre>${escapeHtml(artifact.content)}</pre>${download ? `<a class="text-button" href="/api/tasks/${encodeURIComponent(task.id)}/artifacts/${index}" download>Download file</a>` : ""}</details>`).join("");
+  document.querySelector("#workDeliveryContent").innerHTML = `<h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(output.summary || task.description)}</p><p>${escapeHtml(task.error || task.blockedReason || task.nextAction || "")}</p>${list("Questions from the employee", output.questions)}${list("Limitations", output.limitations)}${files(output.artifacts, true)}${(task.messages || []).map((message) => `<blockquote><strong>Founder</strong><p>${escapeHtml(message.content)}</p></blockquote>`).join("")}<details><summary>Execution history (${task.executionHistory?.length || 0})</summary>${(task.executionHistory || []).map((run) => `<h4>Attempt ${run.attempt} · ${escapeHtml(titleize(run.status))}</h4><p>${escapeHtml(run.output?.summary || run.error || "No delivery")}</p>${files(run.output?.artifacts)}`).join("")}</details>`;
+  const canReply = task.workType !== "software_development" && ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status);
+  document.querySelector("#workFeedbackForm").classList.toggle("hidden", !canReply);
+  document.querySelector("#acceptWorkButton").classList.toggle("hidden", task.status !== "awaiting_review");
+  document.querySelector("#sendWorkFeedback").textContent = ["blocked", "failed"].includes(task.status) ? "Retry with this brief" : "Send and continue";
 }
 
 function employeeStatus(agent) {
   const tasks = state.tasks.filter((task) => task.assignedAgentId === agent.id);
   if (tasks.some((task) => ["blocked", "failed"].includes(task.status))) return "blocked";
+  if (tasks.some((task) => task.status === "needs_input")) return "needs_input";
   if (tasks.some((task) => ["planned", "pending", "running"].includes(task.status))) return "working";
+  if (tasks.some((task) => task.status === "awaiting_review")) return "awaiting_review";
   return agent.status || "available";
 }
 
 function employeeWork(agent) {
-  const active = state.tasks.find((task) => task.assignedAgentId === agent.id && ["running", "pending", "planned", "blocked", "failed"].includes(task.status));
+  const active = state.tasks.find((task) => task.assignedAgentId === agent.id && ["running", "pending", "planned", "blocked", "failed", "needs_input", "awaiting_review"].includes(task.status));
   const recent = state.tasks.filter((task) => task.assignedAgentId === agent.id && task.status === "completed").at(-1);
   return active?.title || recent?.title || "Available for assignment";
 }
@@ -399,7 +421,7 @@ function renderReports() {
     metric("Blocked or failed", (statusCounts.blocked || 0) + (statusCounts.failed || 0), "Requires diagnosis or replanning"),
     metric("Access policies", state.policies.length, `${state.assets.length} classified assets`)
   ].join("");
-  const statuses = ["pending", "running", "completed", "blocked", "failed"];
+  const statuses = ["pending", "running", "needs_input", "awaiting_review", "completed", "blocked", "failed"];
   document.querySelector("#executionReport").innerHTML = statuses.map((status) => {
     const count = statusCounts[status] || 0;
     const percent = totalTasks ? Math.round((count / totalTasks) * 100) : 0;
@@ -464,7 +486,7 @@ function analyzeFounderIntent() {
   const type = /change|update|revise|replace|pause|stop/.test(lower) ? "Change request" : /\?$|how|what|why/.test(lower) ? "Discussion" : "Goal proposal";
   const risk = externalSignals.length ? "Founder confirmation required" : "Internal and reversible";
   state.pendingIntent = { input, externalSignals, type, risk };
-  document.querySelector("#intentBrief").innerHTML = `<div class="panel-heading compact"><div><span class="section-kicker">AI CEO UNDERSTANDING</span><h3>${escapeHtml(type)}</h3></div><span class="status ${externalSignals.length ? "pending" : "completed"}">${externalSignals.length ? "Confirmation gate" : "Ready to plan"}</span></div><div class="intent-brief-grid"><div class="brief-field"><span>Objective</span><strong>${escapeHtml(input)}</strong></div><div class="brief-field"><span>Execution boundary</span><strong>${escapeHtml(risk)}</strong></div><div class="brief-field"><span>Assumption</span><strong>Use the local organization, current employee roster and evidence-backed tools.</strong></div><div class="brief-field"><span>External actions detected</span><strong>${escapeHtml(externalSignals.join(", ") || "None")}</strong></div></div><p>This is a deterministic local intake preview. No language-model provider is connected, so deeper clarification is not yet available.</p><div class="brief-actions"><button class="secondary-button" id="editIntentButton">Continue editing</button>${type !== "Discussion" ? `<button class="primary-button" id="launchIntentButton">Confirm and launch workflow</button>` : ""}</div>`;
+  document.querySelector("#intentBrief").innerHTML = `<div class="panel-heading compact"><div><span class="section-kicker">INTAKE PREVIEW</span><h3>${escapeHtml(type)}</h3></div><span class="status ${externalSignals.length ? "pending" : "completed"}">${externalSignals.length ? "Confirmation gate" : "Ready to plan"}</span></div><div class="intent-brief-grid"><div class="brief-field"><span>Objective</span><strong>${escapeHtml(input)}</strong></div><div class="brief-field"><span>Execution boundary</span><strong>${escapeHtml(risk)}</strong></div><div class="brief-field"><span>Assumption</span><strong>Use the local organization, current employee roster and evidence-backed tools.</strong></div><div class="brief-field"><span>External actions detected</span><strong>${escapeHtml(externalSignals.join(", ") || "None")}</strong></div></div><p>This preview uses local rules. Confirm to send the brief to the AI CEO for a real document or clarifying questions. External actions are not enabled.</p><div class="brief-actions"><button class="secondary-button" id="editIntentButton">Continue editing</button><button class="primary-button" id="launchIntentButton">Confirm and send to AI CEO</button></div>`;
   document.querySelector("#intentBrief").classList.remove("hidden");
 }
 
@@ -476,12 +498,16 @@ async function launchIntent() {
     const sentence = state.pendingIntent.input.split(/[.!?\n]/).find(Boolean)?.trim() || state.pendingIntent.input;
     const title = truncate(sentence, 72);
     const goal = await api("/api/goals", { method: "POST", body: JSON.stringify({ title, description: state.pendingIntent.input }) });
-    await api(`/api/goals/${goal.id}/plan`, { method: "POST", body: "{}" });
+    const task = await api("/api/work-requests", { method: "POST", body: JSON.stringify({ goalId: goal.id,
+      title, instructions: state.pendingIntent.input, workType: "general" }) });
     document.querySelector("#founderCommand").value = "";
     document.querySelector("#intentBrief").classList.add("hidden");
     state.pendingIntent = null;
-    toast("Goal confirmed. The local workflow has started with external actions disabled.");
+    selectedWorkTaskId = task.id;
+    toast("Work request saved. Review its status and delivery in Projects.");
     await refreshData({ quiet: true });
+    showPage("projects");
+    document.querySelector("#workDeliveryPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     toast(error.message, true);
     button.disabled = false;
@@ -517,6 +543,13 @@ async function previewPolicyImpact() {
 }
 
 document.addEventListener("click", (event) => {
+  const workButton = event.target.closest("[data-work-task]");
+  if (workButton) {
+    selectedWorkTaskId = workButton.dataset.workTask;
+    document.querySelector("#workFeedbackMessage").value = "";
+    renderWorkDelivery();
+    document.querySelector("#workDeliveryPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const pageButton = event.target.closest("[data-page], [data-page-link]");
   if (pageButton) showPage(pageButton.dataset.page || pageButton.dataset.pageLink);
   const employee = event.target.closest("[data-agent-id]");
@@ -585,7 +618,11 @@ document.querySelector("#previewPolicyButton").addEventListener("click", preview
 
 document.querySelector("#workRequestForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
+  const form = event.currentTarget;
+  const button = document.querySelector("#submitWorkRequestButton");
+  if (button.disabled) return;
+  button.disabled = true;
+  const values = Object.fromEntries(new FormData(form));
   values.priority = Number(values.priority);
   values.acceptanceCriteria = values.acceptanceCriteria.split(",").map((item) => item.trim()).filter(Boolean);
   if (!values.goalId) delete values.goalId;
@@ -593,8 +630,8 @@ document.querySelector("#workRequestForm").addEventListener("submit", async (eve
   if (!values.assetId) delete values.assetId;
   try {
     const task = await api("/api/work-requests", { method: "POST", body: JSON.stringify(values) });
-    event.currentTarget.reset();
-    event.currentTarget.classList.add("hidden");
+    form.reset();
+    form.classList.add("hidden");
     document.querySelector("#workAssetField").classList.add("hidden");
     const employee = agentById(task.assignedAgentId)?.name || "The selected employee";
     toast(task.status === "blocked"
@@ -602,6 +639,31 @@ document.querySelector("#workRequestForm").addEventListener("submit", async (eve
       : `Work request routed to ${employee} and queued for execution.`);
     await refreshData({ quiet: true });
   } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+document.querySelector("#closeWorkDelivery").addEventListener("click", () => { selectedWorkTaskId = null; renderWorkDelivery(); });
+document.querySelector("#workFeedbackForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = document.querySelector("#sendWorkFeedback");
+  button.disabled = true;
+  try {
+    await api(`/api/tasks/${selectedWorkTaskId}/feedback`, { method: "POST", body: JSON.stringify({ message: document.querySelector("#workFeedbackMessage").value }) });
+    document.querySelector("#workFeedbackMessage").value = "";
+    await refreshData({ quiet: true });
+    toast("Your reply is saved. The employee is queued to continue.");
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+document.querySelector("#acceptWorkButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api(`/api/tasks/${selectedWorkTaskId}/accept`, { method: "POST", body: "{}" });
+    await refreshData({ quiet: true });
+    toast("Delivery accepted and task completed.");
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
 });
 
 document.querySelector("#hireEmployeeForm").addEventListener("submit", async (event) => {

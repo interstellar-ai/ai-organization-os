@@ -33,6 +33,11 @@ export class ToolRegistry {
   async execute(name, input, context = {}) {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: ${name}`);
+    if (tool.options.requiresRunningTask) {
+      const persisted = context.task && context.organization?.getTask(context.task.id);
+      if (!persisted || persisted.status !== "running" || persisted.toolName !== name || persisted.assignedAgentId !== context.agent?.id
+        || persisted.input.assetId !== input?.assetId) throw new Error("Tool requires its assigned running task");
+    }
     if ((tool.options.requiresIdentity || tool.options.authorize) && !context.agent) {
       context.organization?.recordEvent("tool.denied", { toolName: name, reason: "Missing employee identity" });
       throw new Error("Tool identity required");
@@ -226,6 +231,14 @@ export function createDefaultTools(organization, options = {}) {
     }, {
       authorize: (input) => ["read", "modify", "execute"].map((action) => ({ assetId: input.assetId, action }))
     });
+  }
+  if (options.generalExecutor) {
+    registry.register("agent.general", "Deliver documents or clarification from an assigned employee", async (_input, { task, agent }) => {
+      const persisted = organization.getTask(task.id);
+      const employee = organization.list("agents").find((item) => item.id === agent.id);
+      if (!employee.capabilities.includes(persisted.routing?.requiredCapability)) throw new Error("Employee capability is required for this work");
+      return options.generalExecutor.execute({ task: persisted, agent: employee });
+    }, { requiresRunningTask: true, authorize: (input) => ({ assetId: input.assetId, action: "execute" }) });
   }
   return registry;
 }
