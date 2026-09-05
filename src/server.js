@@ -7,6 +7,7 @@ import { Organization, Scheduler } from "./organization.js";
 import { createDefaultTools } from "./tools.js";
 import { CodexExecutor } from "./executors/codex.js";
 import { GeneralAgentExecutor } from "./executors/general.js";
+import { GoalWorkflow } from "./goal-workflow.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(root, "..");
@@ -18,6 +19,8 @@ await codexExecutor.checkAvailability();
 const generalExecutor = new GeneralAgentExecutor({ runtime: codexExecutor });
 const tools = createDefaultTools(organization, { codexExecutor, generalExecutor });
 organization.tools = tools;
+const workflow = new GoalWorkflow(organization, generalExecutor, () => ({ generalAvailable: generalExecutor.status().available, codexAvailable: codexExecutor.status().available }));
+workflow.registerTool();
 const scheduler = new Scheduler(organization);
 
 function seed() {
@@ -191,13 +194,15 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/") return serveStatic(response, "index.html", "text/html; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/styles.css") return serveStatic(response, "styles.css", "text/css; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
+    if (request.method === "GET" && url.pathname === "/goal-ui.js") return serveStatic(response, "goal-ui.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.6.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.7.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
     }
+    if (request.method === "GET" && url.pathname === "/api/projects") return json(response, 200, organization.list("projects").map((p) => workflow.summarizeProject(p.id)));
     if (request.method === "GET" && url.pathname === "/api/assets/catalog") {
       return json(response, 200, organization.authorizedAssetCatalog(url.searchParams.get("agentId"), url.searchParams.get("q") || ""));
     }
@@ -232,8 +237,9 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/tools") return json(response, 200, tools.list());
     if (request.method === "POST" && url.pathname === "/api/agents") return json(response, 201, organization.createAgent(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
-    if (request.method === "POST" && parts[1] === "goals" && parts[3] === "plan") return json(response, 201, organization.planGoal(parts[2]));
-    if (request.method === "POST" && parts[1] === "goals" && parts[3] === "replan") return json(response, 201, organization.replanGoal(parts[2]));
+    if (request.method === "POST" && parts[1] === "goals" && ["plan", "replan"].includes(parts[3])) return json(response, 201, workflow.startPlanning(parts[2], await body(request)));
+    if (request.method === "POST" && parts[1] === "goals" && parts[3] === "approve-plan") return json(response, 200, workflow.approvePlan(parts[2], await body(request)));
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "configure-code") return json(response, 200, workflow.configureCodeTask(parts[2], await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/work-requests") {
       return json(response, 201, organization.createWorkRequest(await body(request), { codexAvailable: codexExecutor.status().available, generalAvailable: generalExecutor.status().available }));
@@ -263,8 +269,9 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
-      if (input.name === "agent.general") return json(response, 400, { error: "Use a work request to execute this managed tool" });
+      if (["agent.general", "goal.plan"].includes(input.name)) return json(response, 400, { error: "Use a work request or goal to execute this managed tool" });
       const task = input.taskId ? organization.getTask(input.taskId) : null;
+      if (task?.planId) return json(response, 400, { error: "Approved plan tasks must execute through the scheduler" });
       const agent = input.agentId ? organization.list("agents").find((item) => item.id === input.agentId) || null : null;
       return json(response, 200, await tools.execute(input.name, input.input || {}, { organization, task, agent }));
     }

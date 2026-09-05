@@ -42,6 +42,8 @@ Home is the Founder Command Center. Employees supports both directory and organi
 
 Projects is a general delivery workspace rather than a coding console. The Founder describes a desired outcome, deliverable, context, constraints, acceptance criteria, priority, and optional goal. The system classifies the work, routes it to the appropriate employee, and selects an approved executor. Coding is one specialization whose current provider is Codex; it is not a top-level product concept.
 
+Goals owns CEO clarification, plan proposals, and Founder confirmation. Projects now contains real project records created from approved plans, with objectives, coordinators, success criteria, tasks, and aggregate delivery progress. Simple goals may use direct tasks. Standalone work requests remain available without inventing a project.
+
 The Access area provides five connected views:
 
 - Employees: effective access, inherited template permissions, project scope, temporary grants, restrictions, and pending requests;
@@ -78,7 +80,9 @@ The current version provides:
 
 - Agent registration with roles and capabilities;
 - Goal creation;
-- Fixed five-stage goal planning;
+- Model-backed CEO planning with clarification, bounded project/task proposals, dependency validation, and explicit Founder confirmation;
+- Atomic and repeat-safe creation of real projects and assigned employee tasks from the current approved proposal;
+- Accepted dependency-artifact handoffs within the same approved plan, plus project and goal delivery-progress summaries;
 - Dependency-aware task scheduling;
 - Basic memory search and write operations;
 - A small allowlisted tool registry;
@@ -106,7 +110,7 @@ The current version provides:
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning for general document work and software development. Home can send a confirmed brief to the AI CEO for a document or clarifying questions; it does not yet create an autonomous multi-employee plan. Classification and routing remain deterministic. Live research, web retrieval, image generation, publishing, outbound sales, durable multi-user storage, authenticated runtime identity, budget enforcement, production-grade isolation, output data-flow controls, durable worker queues, project-scoped access, code review-and-apply, and external execution approval gates remain future work. See [General Agent execution](GENERAL_AGENT_EXECUTION.md).
+The current version uses real model reasoning for CEO planning, general document work, and software development. Home starts CEO planning; the Founder reviews the proposal in Goals before projects and delivery tasks are created. The standalone work-request classifier remains deterministic. Live research, web retrieval, image generation, publishing, outbound sales, durable multi-user storage, authenticated runtime identity, budget enforcement, production-grade isolation, general output data-flow controls, durable queues, project-scoped asset policies, automatic code integration, and external execution approval gates remain future work. See [Goal planning](GOAL_PLANNING.md) and [General Agent execution](GENERAL_AGENT_EXECUTION.md).
 
 ## Task state semantics
 
@@ -127,7 +131,7 @@ Goal-plan tasks use deterministic local tools and must produce evidence. A route
 
 1. Extend the general document executor with permission-filtered context retrieval and independent artifact evaluation; keep external actions behind explicitly approved tools.
 2. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex software-development workflow.
-3. Replace the fixed planner and deterministic work classifier with an LLM-backed planner/router that emits validated structured tasks while keeping Responses API support optional.
+3. Extend the CEO planner with budgets, in-place replanning, cancellation, and stronger independent quality gates while keeping Responses API support optional.
 4. Replace JSON persistence with SQLite or Postgres and add migrations.
 5. Replace the in-process scheduler with a durable queue and worker model.
 6. Add scoped connectors for GitHub review/push, research, browser automation, email, CRM, and publishing.

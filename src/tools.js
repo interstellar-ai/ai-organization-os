@@ -213,7 +213,10 @@ export function createDefaultTools(organization, options = {}) {
   if (options.codexExecutor) {
     registry.register("code.codex", "Implement an assigned coding task with Codex in an isolated Git worktree", async (input, { task, agent }) => {
       const asset = organization.list("assets").find((item) => item.id === input.assetId);
-      const result = await options.codexExecutor.execute({ task, agent, asset });
+      const handoffs = organization.workflow?.dependencyContext(task) || [];
+      if (task.planId && task.dependsOn.some((dep) => organization.getTask(dep).executionMode === "code")) throw new Error("Automatic chaining of isolated code changes is not available");
+      const result = await options.codexExecutor.execute({ task: { ...task,
+        context: [task.context, handoffs.length ? `Accepted dependency deliveries: ${JSON.stringify(handoffs)}` : ""].filter(Boolean).join("\n") }, agent, asset });
       return {
         ...result,
         evidence: [evidence("codex_execution", "Codex completed a sandboxed coding run and returned inspectable workspace evidence.", {
@@ -237,7 +240,7 @@ export function createDefaultTools(organization, options = {}) {
       const persisted = organization.getTask(task.id);
       const employee = organization.list("agents").find((item) => item.id === agent.id);
       if (!employee.capabilities.includes(persisted.routing?.requiredCapability)) throw new Error("Employee capability is required for this work");
-      return options.generalExecutor.execute({ task: persisted, agent: employee });
+      return options.generalExecutor.execute({ task: { ...persisted, dependencyDeliveries: organization.workflow?.dependencyContext(persisted) || [] }, agent: employee });
     }, { requiresRunningTask: true, authorize: (input) => ({ assetId: input.assetId, action: "execute" }) });
   }
   return registry;

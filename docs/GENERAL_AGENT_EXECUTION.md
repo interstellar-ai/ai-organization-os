@@ -9,7 +9,7 @@ Product briefs, plans, textual design specifications, content drafts, sales scri
 ## Founder workflow
 
 1. In Projects, choose **New work request**, describe the outcome, context, deliverable, and acceptance criteria. Select a work type explicitly when automatic classification is unsuitable.
-2. The system selects a capable employee and queues the task. Home's confirmed intent instead starts a general AI CEO work request.
+2. The system selects a capable employee and queues standalone work. Home instead starts [CEO goal planning](GOAL_PLANNING.md), which requires plan confirmation before delivery tasks are created.
 3. Open **Open work and delivery** to inspect returned documents or questions.
 4. Reply using **Send and continue** to clarify or request a revision. The prior result is retained in delivery history.
 5. Read or download the latest files and choose **Accept delivery**. A file's presence alone never automatically accepts a general task.
@@ -41,7 +41,7 @@ Missing sign-in or CLI availability blocks intake. Missing inputs produce questi
 ## Next iterations
 
 1. Add independently evaluated acceptance criteria and a reviewer work order before Founder acceptance.
-2. Add a structured AI CEO planner with validated dependencies, budgets, and human confirmation for material scope changes. Keep planning separate from execution authority.
+2. Extend the implemented CEO planner with budgets, cancellation, and approved in-place scope changes. Keep planning separate from execution authority.
 3. Add permission-filtered retrieval and brokered tools. Validate each operation outside the model using runtime identity, task scope, target asset, and approval; never hand the model unrestricted credentials.
 4. Move execution to a persistent queue and database with cancellation, leases, idempotency, cost limits, and retry policies.
 5. Add separately optional providers, including Responses API, without changing employee permissions or the delivery contract.

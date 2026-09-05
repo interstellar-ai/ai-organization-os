@@ -367,3 +367,11 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .template-footer, .preview-access-row { align-items: stretch; flex-direction: column; }
   .preview-access-row > div { justify-content: flex-start; }
 }
+.plan-task, .plan-project { border: 1px solid var(--border, #dbe2ea); border-radius: 12px; padding: 16px; margin: 12px 0; overflow-wrap: anywhere; }
+.plan-consent { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0; }
+.plan-consent input { width: auto; margin-top: 4px; }
+#goalPlanPanel form { margin-top: 20px; }
+#goalPlanPanel h4 { margin-bottom: 8px; }
+.task-row small { display: block; margin-top: 4px; }
+.status.planning, .status.awaiting_plan_approval { background: #fff3d8; color: #946c00; }
+.status.delivered { background: #e6f5ed; color: #16764b; }

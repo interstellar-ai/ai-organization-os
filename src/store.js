@@ -4,6 +4,7 @@ import path from "node:path";
 const EMPTY_STATE = {
   agents: [],
   goals: [],
+  projects: [],
   tasks: [],
   memories: [],
   events: [],
@@ -17,6 +18,7 @@ function normalizeState(input) {
   const state = { ...EMPTY_STATE, ...input };
   state.agents = Array.isArray(state.agents) ? state.agents : [];
   state.goals = Array.isArray(state.goals) ? state.goals : [];
+  state.projects = Array.isArray(state.projects) ? state.projects : [];
   state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
   state.memories = Array.isArray(state.memories) ? state.memories : [];
   state.events = Array.isArray(state.events) ? state.events : [];
@@ -66,6 +68,8 @@ function normalizeState(input) {
       nextAction: null,
       messages: [],
       executionHistory: [],
+      projectId: null,
+      taskKind: "work",
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"

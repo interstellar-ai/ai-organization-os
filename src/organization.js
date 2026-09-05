@@ -3,7 +3,10 @@ import crypto from "node:crypto";
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 const ACCESS_ACTIONS = ["read", "create", "modify", "execute", "share", "publish", "approve", "delete", "grant", "spend"];
-const WORK_TYPES = {
+export const WORK_TYPES = {
+  review: {
+    label: "Quality review", capability: "validate", preferredJobTypes: ["quality_reviewer", "technical_lead", "ai_ceo"], requiredExecutor: "Review executor"
+  },
   general: {
     label: "General work",
     capability: "iterate",
@@ -504,6 +507,7 @@ export class Organization {
   }
 
   planGoal(goalId, { force = false } = {}) {
+    if (this.getGoal(goalId).planningTaskId) throw new Error("This goal uses the CEO planning workflow");
     const goal = this.getGoal(goalId);
     const existing = this.list("tasks").filter((task) => task.goalId === goalId);
     if (existing.length && !force) return this.latestTasksForGoal(goalId);
@@ -610,6 +614,8 @@ export class Organization {
     const task = {
       id: id("task"),
       goalId: input.goalId || null,
+      projectId: input.projectId || null,
+      taskKind: input.taskKind || "work",
       planCycle: Number.isFinite(input.planCycle) ? input.planCycle : 1,
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
@@ -685,6 +691,7 @@ export class Organization {
   }
 
   createWorkRequest(input = {}, options = {}) {
+    if (input.goalId && this.getGoal(input.goalId).approvedPlanId) throw new Error("This goal has an approved plan. Create independent work or a new goal for a scope change.");
     const instructions = required(input.instructions, "instructions");
     const requestedType = input.workType?.trim() || "auto";
     if (requestedType !== "auto" && !WORK_TYPES[requestedType]) throw new Error("Unknown work type");
@@ -774,6 +781,7 @@ export class Organization {
 
   resumeGeneralTask(taskId, input = {}, options = {}) {
     const task = this.getTask(taskId);
+    if (task.executionMode === "external") throw new Error("External work requires an approved connector; document retry cannot perform it");
     if (task.workType === "software_development" || task.requestSource !== "founder_work_request") throw new Error("Only general work requests support this action");
     if (!["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)) throw new Error("Task is not waiting for feedback or retry");
     const message = typeof input.message === "string" ? input.message.trim() : "";
@@ -792,7 +800,9 @@ export class Organization {
 
   acceptTask(taskId) {
     const task = this.getTask(taskId);
-    if (task.status !== "awaiting_review" || task.output?.outcome !== "delivered" || !task.output.artifacts?.length || !task.evidence?.length) {
+    if (task.taskKind === "goal_planning") throw new Error("Use the goal plan approval action");
+    const codeDelivery = task.planId && task.toolName === "code.codex" && task.output;
+    if (task.status !== "awaiting_review" || (!codeDelivery && (task.output?.outcome !== "delivered" || !task.output.artifacts?.length)) || !task.evidence?.length) {
       throw new Error("Task requires a delivered artifact before acceptance");
     }
     const updated = this.updateTask(taskId, { status: "completed", nextAction: null, acceptedAt: now() });
@@ -838,6 +848,14 @@ export class Organization {
   syncGoalStatus(state, goalId) {
     const goal = state.goals.find((item) => item.id === goalId);
     if (!goal) return;
+    if (goal.planningTaskId) {
+      const planning = state.tasks.find((t) => t.id === goal.planningTaskId);
+      const work = state.tasks.filter((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.planId);
+      goal.executionStatus = !goal.approvedPlanId ? planning?.status === "awaiting_review" ? "awaiting_plan_approval" : planning?.status === "needs_input" ? "needs_input" : ["pending", "running"].includes(planning?.status) ? "planning" : "blocked"
+        : work.every((t) => t.status === "completed") ? "delivered" : work.some((t) => ["blocked", "failed"].includes(t.status)) ? "blocked" : work.some((t) => t.status === "awaiting_review") ? "awaiting_review" : "in_progress";
+      goal.updatedAt = now();
+      return;
+    }
     const tasks = state.tasks.filter((task) => task.goalId === goalId);
     const latestCycle = tasks.length ? Math.max(...tasks.map((task) => task.planCycle || 1)) : 0;
     const latest = tasks.filter((task) => (task.planCycle || 1) === latestCycle);
@@ -863,6 +881,7 @@ export class Organization {
   }
 
   summarizeGoal(goalId) {
+    if (this.workflow && this.getGoal(goalId).planningTaskId) return this.workflow.summarizeGoal(goalId);
     const goal = this.getGoal(goalId);
     const tasks = this.latestTasksForGoal(goalId);
     const counts = taskCounts(tasks);
@@ -926,9 +945,9 @@ export class Organization {
       const output = await this.tools.execute(task.toolName, task.input, { task: this.getTask(task.id), agent, organization: this });
       const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
       if (!evidence.length) throw new Error("Executor returned no evidence");
-      const status = task.toolName === "agent.general"
+      const status = ["agent.general", "goal.plan"].includes(task.toolName)
         ? { delivered: "awaiting_review", needs_input: "needs_input", blocked: "blocked" }[output.outcome]
-        : "completed";
+        : task.planId && task.toolName === "code.codex" ? "awaiting_review" : "completed";
       if (!status) throw new Error("Executor returned an unknown outcome");
       const nextAction = status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
         : status === "needs_input" ? "Answer the employee's questions to continue." : null;

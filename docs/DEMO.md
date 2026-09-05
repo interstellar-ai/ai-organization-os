@@ -41,7 +41,7 @@ Show an effective-access explanation or policy impact preview. Do not approve an
 
 ### 1:30–2:10 — General work request and routed execution
 
-Open Projects and select **New work request**.
+On Home, submit a small fictional document-only goal with two deliverables. In Goals, inspect the CEO proposal before confirming it. Then show the resulting Projects and employee tasks. For a shorter standalone demonstration, use **New work request** in Projects.
 
 > The Founder describes a desired business outcome rather than choosing a technical tool. The system classifies the request, assigns the appropriate employee, and selects an approved executor. Product, research, design, software, content, sales, operations, and general work share the same intake contract.
 
@@ -61,7 +61,7 @@ Open Reports and Audit.
 
 Return to Home or Projects.
 
-> The v0.6 development version adds real document delivery, clarification, revisions, and Founder acceptance. Next come independent review, automatic multi-employee planning, code diff review and apply-or-reject controls, durable execution, and scoped external connectors.
+> The v0.7 development version connects goals to CEO proposals, approved projects, assigned employee tasks, and accepted document handoffs. Next come stronger quality gates, code integration, durable execution, budgets, and scoped external connectors.
 
 End with the repository URL:
 

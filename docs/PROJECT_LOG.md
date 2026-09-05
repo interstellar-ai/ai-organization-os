@@ -116,6 +116,17 @@ This file records dated implementation facts and decisions. Stable product defin
 - Verified invalid artifact downloads returned 404 and a disallowed browser-origin acceptance request returned 403. The real demo remains awaiting Founder acceptance; acceptance and invalid-state rejection were verified in automated tests, not by accepting on behalf of the Founder.
 - Kept live research, external actions, autonomous multi-employee planning, independent quality evaluation, production isolation, and durable workers as explicit next iterations.
 
+## 2026-09-05 — Goal-to-project orchestration
+
+- Replaced the Home document-only goal intake with a protected model-backed CEO planning task. Existing legacy goal records remain unchanged.
+- Added real project records and a bounded proposal schema covering projects, employee assignments, deliverables, acceptance criteria, execution modes, and dependencies. Simple goals can use direct tasks.
+- Added clarification, pre-approval revision, current-proposal identity checks, employee-capability validation, cycle detection, and atomic repeat-safe confirmation. Delivery tasks are not created before confirmation.
+- Added Goals plan review and conversation, Projects task lists and progress, accepted dependency-artifact handoffs with audit records, and explicit codebase selection for planned coding work.
+- Preserved runtime policy checks, external-action blockers, isolated coding worktrees, and human delivery acceptance. Goal execution delivery remains separate from unverified business outcomes.
+- Verified 37 automated tests covering orchestration, dependency gating and data handoff, stale and repeated confirmations, clarification, invalid graphs, atomic rollback, code permission checks, and unrelated-goal handoff denial.
+- Verified a real Codex-backed CEO call through Home. It proposed two document projects and two assigned tasks for a fictional reading-list launch package, with the launch copy depending on the product brief. The browser displayed the complete proposal and no console errors; the proposal remains awaiting Founder confirmation.
+- The full approval-to-delivery chain was verified using isolated test stores and controlled provider responses. The real demonstration was not approved or accepted on behalf of the Founder.
+
 ## Architecture snapshot
 
 ```text
@@ -125,6 +136,7 @@ public/index.html + public/styles.css + public/app.js
           → Agent / Goal / Task / Memory domain objects
           → Job Template / Asset / Policy / Access Request domain objects
           → Scheduler
+          → src/goal-workflow.js (CEO proposals, approved projects, dependency handoffs)
           → src/tools.js (allowlisted tools)
               → src/executors/codex.js (protected coding worktrees)
               → src/executors/general.js (structured employee documents)

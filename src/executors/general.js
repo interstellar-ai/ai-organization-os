@@ -61,6 +61,7 @@ export class GeneralAgentExecutor {
         title: task.title, workType: task.workType, instructions: task.description,
         deliverable: task.deliverable, context: task.context,
         acceptanceCriteria: task.acceptanceCriteria, messages: task.messages || [],
+        dependencyDeliveries: task.dependencyDeliveries || [],
         previousDelivery: task.output ? { summary: task.output.summary, artifacts: task.output.artifacts } : null
       };
       const prompt = [

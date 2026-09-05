@@ -50,7 +50,7 @@
         <article class="panel"><div class="panel-heading"><div><span class="section-kicker">EXECUTIVE VIEW</span><h3>Active goals</h3></div><button class="secondary-button" data-page-link="goals">Open goals</button></div><div id="homeGoalList" class="goal-grid"></div></article>
       </section>
 
-      <section class="page" data-page-panel="goals"><div class="page-intro"><div><span class="eyebrow">STRATEGIC OUTCOMES</span><h2>Goals</h2><p>Durable outcomes, progress, evidence and the next organizational action.</p></div><button class="primary-button" data-page-link="home">Create through AI CEO</button></div><div id="goalList" class="goal-list"></div></section>
+      <section class="page" data-page-panel="goals"><div class="page-intro"><div><span class="eyebrow">STRATEGIC OUTCOMES</span><h2>Goals</h2><p>Describe an outcome, discuss the CEO plan, then confirm projects and employee tasks.</p></div><button class="primary-button" data-page-link="home">Create through AI CEO</button></div><article id="goalPlanPanel" class="panel form-panel hidden"></article><div id="goalList" class="goal-list"></div></section>
 
       <section class="page" data-page-panel="projects">
         <div class="page-intro"><div><span class="eyebrow">DELIVERY SYSTEM</span><h2>Projects</h2><p>Turn business outcomes into routed work for the right AI employees, tools and approval boundaries.</p></div><div class="page-actions"><span id="codexStatusBadge" class="preview-badge">Checking executors…</span><button id="showWorkRequestFormButton" class="primary-button">New work request</button></div></div>
@@ -61,6 +61,7 @@
           <div class="brief-actions"><button type="button" class="secondary-button" data-close-form="workRequestForm">Cancel</button><button id="submitWorkRequestButton" class="primary-button" type="submit">Route work request</button></div>
         </form>
         <div id="executorRuntimeNotice" class="notice"><strong>Execution coverage</strong><span>Checking connected employee tools…</span></div>
+        <div class="split-heading"><div><span class="section-kicker">PROJECTS FROM APPROVED GOALS</span><h3>Projects and employee tasks</h3></div></div><div id="projectList" class="project-list"></div>
         <div class="split-heading"><div><span class="section-kicker">WORK ORDERS</span><h3>Founder work requests</h3></div></div><div id="workRequestList" class="project-list"></div>
         <article id="workDeliveryPanel" class="panel form-panel hidden" aria-label="Work delivery">
           <div class="panel-heading"><h3>Delivery and conversation</h3><button id="closeWorkDelivery" class="text-button" type="button">Close</button></div>
@@ -70,14 +71,13 @@
             <div class="brief-actions"><button id="acceptWorkButton" type="button" class="secondary-button">Accept delivery</button><button id="sendWorkFeedback" type="submit" class="primary-button">Send and continue</button></div>
           </form>
         </article>
-        <div class="split-heading"><div><span class="section-kicker">GOAL WORKFLOWS</span><h3>Organization delivery plans</h3></div></div><div id="projectList" class="project-list"></div>
       </section>
 
       <section class="page" data-page-panel="employees">
         <div class="page-intro"><div><span class="eyebrow">ORGANIZATION</span><h2>Employees</h2><p>Roles, reporting lines, capabilities, active work and delivery history.</p></div><div class="page-actions"><button id="showHireFormButton" class="primary-button">Hire employee</button><div class="segmented" role="group"><button class="active" data-employee-view="directory">Directory</button><button data-employee-view="organization">Organization</button></div></div></div>
         <form id="hireEmployeeForm" class="panel form-panel hire-panel hidden">
           <div class="panel-heading"><div><span class="section-kicker">TEMPLATE-BASED HIRING</span><h3>Create an employee from a job template</h3><p>The template supplies the role, department, responsibilities and capabilities. Policies use those attributes to calculate default access.</p></div><button type="button" class="text-button" data-close-form="hireEmployeeForm">Cancel</button></div>
-          <div class="hire-layout"><div class="hire-fields"><label>Job template<select id="hireTemplateSelect" name="templateId" required></select></label><label>Employee name<input name="name" required placeholder="Example: Engineering Specialist" /></label><label>Reports to<select id="hireManagerSelect" name="managerId"></select></label><div class="notice compact-notice"><strong>Project assignment</strong><span>Projects are not assigned during hiring yet. This will be enabled when the Project workspace is implemented.</span></div></div><div id="hirePreview" class="hire-preview"><div class="empty-state">Choose a job template to preview the employee role and default access.</div></div></div>
+          <div class="hire-layout"><div class="hire-fields"><label>Job template<select id="hireTemplateSelect" name="templateId" required></select></label><label>Employee name<input name="name" required placeholder="Example: Engineering Specialist" /></label><label>Reports to<select id="hireManagerSelect" name="managerId"></select></label><div class="notice compact-notice"><strong>Project assignment</strong><span>Approved goal plans assign project work. Hiring alone does not grant access to project assets.</span></div></div><div id="hirePreview" class="hire-preview"><div class="empty-state">Choose a job template to preview the employee role and default access.</div></div></div>
           <div class="brief-actions"><button type="button" id="cancelHireButton" class="secondary-button">Cancel</button><button type="submit" class="primary-button">Confirm hire</button></div>
         </form>
         <div class="filter-row"><input id="employeeSearch" type="search" placeholder="Search employees, roles or departments" /><select id="departmentFilter"><option value="">All departments</option></select></div>
