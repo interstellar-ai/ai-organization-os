@@ -616,6 +616,14 @@ export class Organization {
       goalId: input.goalId || null,
       projectId: input.projectId || null,
       taskKind: input.taskKind || "work",
+      planId: input.planId || null,
+      executionMode: input.executionMode || null,
+      reviewTargetTaskId: input.reviewTargetTaskId || null,
+      reviewRound: Number.isFinite(input.reviewRound) ? input.reviewRound : 0,
+      autoRevisionCount: Number.isFinite(input.autoRevisionCount) ? input.autoRevisionCount : 0,
+      autoRetryCount: Number.isFinite(input.autoRetryCount) ? input.autoRetryCount : 0,
+      founderReviewRequired: Boolean(input.founderReviewRequired),
+      nextAttemptAt: input.nextAttemptAt || null,
       planCycle: Number.isFinite(input.planCycle) ? input.planCycle : 1,
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
@@ -789,6 +797,7 @@ export class Organization {
     if (message.length > 20_000) throw new Error("Feedback is too long");
     const binding = this.generalTaskBinding(options);
     if (!binding.toolName) throw new Error(binding.nextAction);
+    this.workflow?.supersedeBlockedReview(task.id);
     const previous = { attempt: task.attempts, status: task.status, output: task.output, evidence: task.evidence, error: task.error, endedAt: now() };
     const updated = this.updateTask(task.id, { ...binding, executor: binding.toolName, error: null, evidence: [],
       messages: [...(task.messages || []), ...(message ? [{ role: "founder", content: message, createdAt: now() }] : [])],
@@ -805,8 +814,10 @@ export class Organization {
     if (task.status !== "awaiting_review" || (!codeDelivery && (task.output?.outcome !== "delivered" || !task.output.artifacts?.length)) || !task.evidence?.length) {
       throw new Error("Task requires a delivered artifact before acceptance");
     }
+    this.workflow?.supersedeBlockedReview(task.id);
     const updated = this.updateTask(taskId, { status: "completed", nextAction: null, acceptedAt: now() });
     this.recordEvent("task.accepted", { taskId, decidedBy: "Founder", evidenceCount: task.evidence.length });
+    if (task.planId) this.workflow?.queueFinalReport(task.goalId);
     return updated;
   }
 
@@ -850,9 +861,14 @@ export class Organization {
     if (!goal) return;
     if (goal.planningTaskId) {
       const planning = state.tasks.find((t) => t.id === goal.planningTaskId);
-      const work = state.tasks.filter((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.planId);
+      const work = state.tasks.filter((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.taskKind === "work");
+      const report = goal.finalReportTaskId ? state.tasks.find((t) => t.id === goal.finalReportTaskId) : null;
+      const deliveryComplete = work.length > 0 && work.every((t) => t.status === "completed");
       goal.executionStatus = !goal.approvedPlanId ? planning?.status === "awaiting_review" ? "awaiting_plan_approval" : planning?.status === "needs_input" ? "needs_input" : ["pending", "running"].includes(planning?.status) ? "planning" : "blocked"
-        : work.every((t) => t.status === "completed") ? "delivered" : work.some((t) => ["blocked", "failed"].includes(t.status)) ? "blocked" : work.some((t) => t.status === "awaiting_review") ? "awaiting_review" : "in_progress";
+        : deliveryComplete ? !goal.autonomyPolicy ? "delivered" : report?.status === "completed" ? "delivered"
+          : ["blocked", "failed"].includes(report?.status) || goal.finalReportStatus === "blocked" ? "blocked" : "reporting"
+          : work.some((t) => ["blocked", "failed"].includes(t.status)) ? "blocked"
+            : work.some((t) => ["awaiting_review", "awaiting_quality_review"].includes(t.status)) ? "awaiting_review" : "in_progress";
       goal.updatedAt = now();
       return;
     }
@@ -932,7 +948,6 @@ export class Organization {
       });
       throw new Error("Task has no executor configured");
     }
-
     this.updateTask(taskId, {
       status: "running",
       attempts: (task.attempts || 0) + 1,
@@ -946,17 +961,30 @@ export class Organization {
       const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
       if (!evidence.length) throw new Error("Executor returned no evidence");
       const status = ["agent.general", "goal.plan"].includes(task.toolName)
-        ? { delivered: "awaiting_review", needs_input: "needs_input", blocked: "blocked" }[output.outcome]
+        ? { delivered: task.taskKind === "goal_report" ? "completed" : task.toolName === "agent.general" && this.workflow?.shouldAutoReview(task) ? "awaiting_quality_review" : "awaiting_review", needs_input: "needs_input", blocked: "blocked" }[output.outcome]
         : task.planId && task.toolName === "code.codex" ? "awaiting_review" : "completed";
       if (!status) throw new Error("Executor returned an unknown outcome");
-      const nextAction = status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
+      const nextAction = status === "awaiting_quality_review" ? "An independent quality review is queued."
+        : status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
         : status === "needs_input" ? "Answer the employee's questions to continue." : null;
-      const result = this.updateTask(taskId, { status, output, evidence, error: null, nextAction,
+      const result = this.updateTask(taskId, { status, output, evidence, error: null, nextAction, nextAttemptAt: null, autoRetryCount: 0,
         blockedReason: status === "blocked" ? output.limitations.join(" ") : null });
       this.recordEvent(`task.${status}`, { taskId, evidenceCount: evidence.length });
+      if (status === "awaiting_quality_review") this.workflow.queueQualityReview(result);
+      if (task.toolName === "delivery.review") this.workflow.applyQualityReview(result);
+      if (task.taskKind === "goal_report") this.store.update((state) => {
+        const goal = state.goals.find((g) => g.id === task.goalId);
+        if (goal) goal.finalReportStatus = status;
+        return state;
+      });
       return result;
     } catch (error) {
-      const failed = this.updateTask(taskId, { status: "failed", error: error.message });
+      if (error.code === "AUTONOMY_BUDGET_EXHAUSTED") throw error;
+      const current = this.getTask(taskId);
+      const retry = this.workflow?.handleExecutionFailure(current, error);
+      if (retry) return retry;
+      const failed = this.updateTask(taskId, { status: "failed", error: error.message, founderReviewRequired: Boolean(task.planId) });
+      this.workflow?.handlePermanentFailure(failed, error);
       this.recordEvent("task.failed", { taskId, error: error.message });
       throw Object.assign(error, { task: failed });
     }
@@ -984,7 +1012,7 @@ export class Scheduler {
 
   async tick() {
     const tasks = this.organization.list("tasks")
-      .filter((task) => task.status === "pending")
+      .filter((task) => task.status === "pending" && (!task.nextAttemptAt || new Date(task.nextAttemptAt).getTime() <= Date.now()))
       .sort((a, b) => a.priority - b.priority);
     for (const task of tasks) {
       if (this.running.size >= 2) break;

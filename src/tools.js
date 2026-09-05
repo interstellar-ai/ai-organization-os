@@ -215,6 +215,7 @@ export function createDefaultTools(organization, options = {}) {
       const asset = organization.list("assets").find((item) => item.id === input.assetId);
       const handoffs = organization.workflow?.dependencyContext(task) || [];
       if (task.planId && task.dependsOn.some((dep) => organization.getTask(dep).executionMode === "code")) throw new Error("Automatic chaining of isolated code changes is not available");
+      organization.workflow?.requireModelRun(task);
       const result = await options.codexExecutor.execute({ task: { ...task,
         context: [task.context, handoffs.length ? `Accepted dependency deliveries: ${JSON.stringify(handoffs)}` : ""].filter(Boolean).join("\n") }, agent, asset });
       return {
@@ -240,7 +241,9 @@ export function createDefaultTools(organization, options = {}) {
       const persisted = organization.getTask(task.id);
       const employee = organization.list("agents").find((item) => item.id === agent.id);
       if (!employee.capabilities.includes(persisted.routing?.requiredCapability)) throw new Error("Employee capability is required for this work");
-      return options.generalExecutor.execute({ task: { ...persisted, dependencyDeliveries: organization.workflow?.dependencyContext(persisted) || [] }, agent: employee });
+      const dependencyDeliveries = organization.workflow?.dependencyContext(persisted) || [];
+      organization.workflow?.requireModelRun(persisted);
+      return options.generalExecutor.execute({ task: { ...persisted, dependencyDeliveries }, agent: employee });
     }, { requiresRunningTask: true, authorize: (input) => ({ assetId: input.assetId, action: "execute" }) });
   }
   return registry;

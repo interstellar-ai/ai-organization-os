@@ -7,7 +7,7 @@ import { JsonStore } from "../src/store.js";
 import { Organization, Scheduler } from "../src/organization.js";
 import { createDefaultTools } from "../src/tools.js";
 import { GeneralAgentExecutor } from "../src/executors/general.js";
-import { GoalWorkflow, validateGoalPlan } from "../src/goal-workflow.js";
+import { GoalWorkflow, validateGoalPlan, validateQualityReview } from "../src/goal-workflow.js";
 
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-org-goal-test-"));
@@ -27,6 +27,7 @@ function setup(t) {
     calls.push(options.input);
     const output = responses.shift();
     assert.ok(output, "Unexpected provider call");
+    if (output.process) return output.process;
     return { code: 0, stdout: [
       { type: "item.completed", item: { type: "agent_message", text: JSON.stringify(output) } }, { type: "turn.completed" }
     ].map((e) => JSON.stringify(e)).join("\n") };
@@ -47,23 +48,27 @@ function setup(t) {
     { key: "flows", projectKey: "experience", title: "Design flows", workType: "design", executionMode: "document", assignedAgentId: designer.id,
       instructions: "Use the accepted brief to design flows", deliverable: "flows.md", acceptanceCriteria: ["Cover every feature"], dependsOn: ["brief"] }] });
   const delivery = (filename, content) => ({ outcome: "delivered", summary: "Actual work returned", questions: [], limitations: [], artifacts: [{ filename, content }] });
+  const quality = (criteria, verdict = "pass", feedback = []) => delivery("review.json", JSON.stringify({ verdict,
+    summary: verdict === "pass" ? "All criteria are supported by the delivery" : "The delivery needs correction", confidence: 0.9,
+    checks: criteria.map((criterion, index) => ({ criterion, status: verdict === "pass" ? "pass" : index === 0 ? "fail" : "pass", evidence: "Specific content evidence" })), feedback }));
   const propose = async (value = plan()) => {
     responses.push(delivery("plan.json", JSON.stringify(value)));
     const task = workflow.startPlanning(goal.id);
     return org.executeTask(task.id);
   };
-  return { org, workflow, goal, plan, delivery, propose, responses, calls, codeCalls, ceo, product, designer, reviewer, engineer, runtimeAsset, store, dir };
+  return { org, workflow, goal, plan, delivery, quality, propose, responses, calls, codeCalls, ceo, product, designer, reviewer, engineer, runtimeAsset, store, dir };
 }
 
 test("goal proposal materializes projects only on approval and delivers through dependency handoffs", async (t) => {
-  const { org, workflow, goal, propose, responses, calls, delivery, store } = setup(t);
+  const { org, workflow, goal, propose, responses, calls, delivery, quality, store } = setup(t);
   const proposal = await propose();
   assert.equal(proposal.status, "awaiting_review");
   assert.equal(org.list("projects").length, 0);
   assert.equal(org.list("tasks").length, 1);
   assert.equal(org.summarizeGoal(goal.id).executionStatus, "awaiting_plan_approval");
   assert.throws(() => org.acceptTask(proposal.id), /plan approval/);
-  const input = { proposalId: proposal.output.proposalId };
+  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId }), /consent/);
+  const input = { proposalId: proposal.output.proposalId, controlledAutonomy: true };
   const accepted = workflow.approvePlan(goal.id, input);
   assert.equal(accepted.projects.length, 2);
   assert.equal(accepted.tasks.length, 2);
@@ -75,21 +80,32 @@ test("goal proposal materializes projects only on approval and delivers through 
   responses.push(delivery("brief.md", "Unique accepted product requirements"));
   await scheduler.tick();
   while (scheduler.running.size) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(org.getTask(brief.id).status, "awaiting_review");
+  assert.equal(org.getTask(brief.id).status, "awaiting_quality_review");
   assert.equal(org.getTask(flows.id).status, "pending");
-  await scheduler.tick();
-  assert.equal(calls.length, 2, "awaiting review does not unlock dependencies");
-  org.acceptTask(brief.id);
+  const briefReview = org.list("tasks").find((task) => task.reviewTargetTaskId === brief.id);
+  responses.push(quality(brief.acceptanceCriteria));
+  await org.executeTask(briefReview.id);
+  assert.equal(org.getTask(brief.id).status, "completed");
   responses.push(delivery("flows.md", "A concrete flow based on the brief"));
   await scheduler.tick();
   while (scheduler.running.size) await new Promise((resolve) => setImmediate(resolve));
-  assert.match(calls[2], /Unique accepted product requirements/);
-  assert.equal(org.getTask(flows.id).status, "awaiting_review");
-  org.acceptTask(flows.id);
-  const summary = org.summarizeGoal(goal.id);
+  assert.match(calls[3], /Unique accepted product requirements/);
+  assert.equal(org.getTask(flows.id).status, "awaiting_quality_review");
+  const flowReview = org.list("tasks").find((task) => task.reviewTargetTaskId === flows.id);
+  responses.push(quality(flows.acceptanceCriteria));
+  await org.executeTask(flowReview.id);
+  assert.equal(org.getTask(flows.id).status, "completed");
+  let summary = org.summarizeGoal(goal.id);
+  assert.equal(summary.executionStatus, "reporting");
+  assert.equal(summary.finalReport.status, "pending");
+  responses.push(delivery("executive-summary.md", "All two workstreams were accepted. Business outcomes remain unverified."));
+  await org.executeTask(summary.finalReport.id);
+  summary = org.summarizeGoal(goal.id);
   assert.equal(summary.executionStatus, "delivered");
+  assert.equal(summary.finalReport.status, "completed");
   assert.equal(summary.progress.percent, 100);
   assert.equal(summary.outcomeStatus, "unverified");
+  assert.equal(summary.autonomyUsage.modelRuns, 5);
   assert.ok(summary.projects.every((p) => p.progress.status === "delivered"));
   assert.equal(new JsonStore(store.filePath).read().projects.length, 2);
 });
@@ -118,7 +134,7 @@ test("simple goals can produce direct tasks with no project", async (t) => {
   simple.projects = [];
   simple.tasks = [{ ...simple.tasks[0], projectKey: null }];
   const proposal = await propose(simple);
-  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId });
+  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
   assert.equal(result.projects.length, 0);
   assert.equal(result.tasks[0].projectId, null);
 });
@@ -147,7 +163,7 @@ test("confirmation revalidates employee capabilities and is atomic", async (t) =
   const proposal = await propose();
   org.store.update((s) => { s.agents.find((a) => a.id === designer.id).capabilities = []; return s; });
   const before = org.store.read();
-  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId }), /capability/);
+  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }), /capability/);
   assert.deepEqual(org.store.read(), before);
 });
 
@@ -157,7 +173,7 @@ test("external and unbound code work remain blocked and cannot use general retry
   value.tasks[0].executionMode = "external";
   value.tasks[1] = { ...value.tasks[1], workType: "software_development", executionMode: "code", assignedAgentId: engineer.id };
   const proposal = await propose(value);
-  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId });
+  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
   assert.ok(result.tasks.every((task) => task.status === "blocked"));
   assert.throws(() => org.resumeGeneralTask(result.tasks[0].id, {}, { generalAvailable: true }), /External work/);
   assert.throws(() => workflow.configureCodeTask(result.tasks[1].id, { assetId: "unknown" }), /asset is required/);
@@ -167,7 +183,7 @@ test("external and unbound code work remain blocked and cannot use general retry
 test("dependency handoffs reject unrelated goals and planning requires runtime policy", async (t) => {
   const { org, workflow, goal, propose, calls, runtimeAsset } = setup(t);
   const proposal = await propose();
-  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId });
+  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
   const other = org.createGoal({ title: "Private unrelated goal" });
   const unrelated = org.createTask({ goalId: other.id, title: "Private work" });
   org.updateTask(unrelated.id, { status: "completed" });
@@ -185,7 +201,7 @@ test("failure during plan materialization writes no partial work", async (t) => 
   value.tasks[1] = { ...value.tasks[1], workType: "software_development", executionMode: "code", assignedAgentId: engineer.id };
   const proposal = await propose(value);
   const before = org.store.read();
-  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, codeAssets: { flows: "invalid" } }), /asset is invalid/);
+  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true, codeAssets: { flows: "invalid" } }), /asset is invalid/);
   assert.deepEqual(org.store.read(), before);
 });
 
@@ -195,15 +211,144 @@ test("explicitly bound plan code work keeps policy checks and waits for acceptan
   value.projects = [];
   value.tasks = [{ ...value.tasks[0], projectKey: null, workType: "software_development", executionMode: "code", assignedAgentId: engineer.id }];
   const proposal = await propose(value);
-  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId });
+  const result = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
   const asset = org.createAsset({ name: "Test repository", type: "source_code", workspacePath: dir });
   const task = workflow.configureCodeTask(result.tasks[0].id, { assetId: asset.id });
   await assert.rejects(org.executeTask(task.id), /authorization denied/);
   assert.equal(codeCalls.length, 0);
+  assert.equal(org.getGoal(goal.id).autonomyUsage.modelRuns, 0);
   org.createPolicy({ name: "Engineer works on test source", employeeJobType: engineer.jobType, assetType: "source_code", actions: ["read", "modify", "execute"] });
   workflow.configureCodeTask(task.id, { assetId: asset.id });
   const delivery = await org.executeTask(task.id);
   assert.equal(delivery.status, "awaiting_review");
+  assert.equal(org.getGoal(goal.id).autonomyUsage.modelRuns, 1);
   assert.equal(org.acceptTask(task.id).status, "completed");
   assert.equal(org.summarizeGoal(goal.id).outcomeStatus, "unverified");
+});
+
+test("controlled autonomy revises failed document work and accepts a corrected delivery", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery, quality } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+
+  responses.push(delivery("brief.md", "An incomplete first draft"));
+  await org.executeTask(work.id);
+  let review = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id && task.status === "pending");
+  assert.notEqual(review.assignedAgentId, work.assignedAgentId);
+  responses.push(quality(work.acceptanceCriteria, "revise", ["Add all three core features with concrete user value."]));
+  await org.executeTask(review.id);
+  let revised = org.getTask(work.id);
+  assert.equal(revised.status, "pending");
+  assert.equal(revised.autoRevisionCount, 1);
+  assert.equal(revised.executionHistory.length, 1);
+  assert.match(revised.messages[0].content, /three core features/);
+
+  responses.push(delivery("brief.md", "Three concrete core features with user value"));
+  await org.executeTask(work.id);
+  review = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id && task.status === "pending");
+  responses.push(quality(work.acceptanceCriteria));
+  await org.executeTask(review.id);
+  revised = org.getTask(work.id);
+  assert.equal(revised.status, "completed");
+  assert.equal(revised.acceptanceMode, "independent_quality_review");
+  assert.equal(org.summarizeGoal(goal.id).executionStatus, "reporting");
+});
+
+test("model-run budget exhaustion escalates to the Founder and an approved extension resumes it", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery, quality } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  org.store.update((state) => { state.goals.find((item) => item.id === goal.id).autonomyPolicy.maxModelRuns = 1; return state; });
+  responses.push(delivery("brief.md", "A delivery ready for review"));
+  await org.executeTask(work.id);
+  const review = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id);
+  await assert.rejects(org.executeTask(review.id), /budget exhausted/);
+  assert.equal(org.getTask(review.id).status, "blocked");
+  assert.equal(org.getTask(work.id).status, "awaiting_review");
+  assert.equal(org.getTask(work.id).founderReviewRequired, true);
+  assert.equal(org.getGoal(goal.id).autonomyUsage.modelRuns, 1);
+  assert.throws(() => workflow.extendBudget(goal.id, { taskId: review.id, additionalModelRuns: 8 }), /reason/);
+  const resumed = workflow.extendBudget(goal.id, { taskId: review.id, additionalModelRuns: 8, reason: "Complete the approved independent review." });
+  assert.equal(resumed.autonomyPolicy.maxModelRuns, 9);
+  assert.equal(org.getTask(review.id).status, "pending");
+  assert.equal(org.getTask(work.id).status, "awaiting_quality_review");
+  responses.push(quality(work.acceptanceCriteria));
+  await org.executeTask(review.id);
+  assert.equal(org.getTask(work.id).status, "completed");
+  assert.ok(org.list("events").some((event) => event.type === "goal.budget_extended"));
+});
+
+test("temporary provider failures retry within the approved attempt limit", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  responses.push({ process: { code: 1, stdout: "", stderr: "connection reset" } });
+  const retry = await org.executeTask(work.id);
+  assert.equal(retry.status, "pending");
+  assert.ok(retry.nextAttemptAt);
+  org.updateTask(work.id, { nextAttemptAt: new Date(Date.now() - 1000).toISOString() });
+  responses.push(delivery("brief.md", "Recovered delivery"));
+  const delivered = await org.executeTask(work.id);
+  assert.equal(delivered.status, "awaiting_quality_review");
+  assert.equal(delivered.attempts, 2);
+  assert.equal(org.getGoal(goal.id).autonomyUsage.modelRuns, 2);
+});
+
+test("a Founder decision supersedes a budget-blocked review without hiding later report budget needs", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  org.store.update((state) => { state.goals.find((item) => item.id === goal.id).autonomyPolicy.maxModelRuns = 1; return state; });
+  responses.push(delivery("brief.md", "A Founder-reviewable delivery"));
+  await org.executeTask(work.id);
+  const review = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id);
+  await assert.rejects(org.executeTask(review.id), /budget exhausted/);
+  org.acceptTask(work.id);
+  assert.equal(org.getTask(review.id).status, "superseded");
+  const report = org.summarizeGoal(goal.id).finalReport;
+  await assert.rejects(org.executeTask(report.id), /budget exhausted/);
+  assert.equal(org.getTask(report.id).status, "blocked");
+  workflow.extendBudget(goal.id, { taskId: report.id, additionalModelRuns: 4, reason: "Finish the approved executive report." });
+  responses.push(delivery("executive-summary.md", "Delivery complete; external business outcomes remain unverified."));
+  await org.executeTask(report.id);
+  assert.equal(org.summarizeGoal(goal.id).executionStatus, "delivered");
+});
+
+test("quality review contracts cannot pass failed criteria", () => {
+  assert.throws(() => validateQualityReview({ verdict: "pass", summary: "Looks good", confidence: 0.9,
+    checks: [{ criterion: "Required criterion", status: "fail", evidence: "Missing" }], feedback: [] }, ["Required criterion"]), /pass requires/);
+});
+
+test("plans without a controlled-autonomy policy keep Founder document acceptance", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  org.store.update((state) => {
+    const current = state.goals.find((item) => item.id === goal.id);
+    current.autonomyPolicy = null;
+    current.autonomyUsage = { modelRuns: 0 };
+    return state;
+  });
+  responses.push(delivery("brief.md", "Legacy approved delivery"));
+  const result = await org.executeTask(work.id);
+  assert.equal(result.status, "awaiting_review");
+  org.acceptTask(work.id);
+  const summary = org.summarizeGoal(goal.id);
+  assert.equal(summary.executionStatus, "delivered");
+  assert.equal(summary.finalReport, null);
 });

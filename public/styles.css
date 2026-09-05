@@ -375,3 +375,7 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
 .task-row small { display: block; margin-top: 4px; }
 .status.planning, .status.awaiting_plan_approval { background: #fff3d8; color: #946c00; }
 .status.delivered { background: #e6f5ed; color: #16764b; }
+.status.reporting, .status.awaiting_quality_review { background: #e8f0ff; color: #315ca8; }
+.autonomy-note { color: var(--muted); font-size: 12px; }
+.final-report-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; background: #f8faf7; }
+.final-report-card p { margin: 6px 0; }

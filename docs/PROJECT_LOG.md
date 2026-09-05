@@ -127,6 +127,16 @@ This file records dated implementation facts and decisions. Stable product defin
 - Verified a real Codex-backed CEO call through Home. It proposed two document projects and two assigned tasks for a fictional reading-list launch package, with the launch copy depending on the product brief. The browser displayed the complete proposal and no console errors; the proposal remains awaiting Founder confirmation.
 - The full approval-to-delivery chain was verified using isolated test stores and controlled provider responses. The real demonstration was not approved or accepted on behalf of the Founder.
 
+## 2026-09-05 — Controlled autonomy
+
+- Added an explicit autonomy policy at plan confirmation: independent review for internal document tasks, up to two automatic revision rounds, up to three attempts for transient provider failures, a plan-sized model-run budget, and a final AI CEO report.
+- Added a separate protected `delivery.review` executor contract with exact acceptance-criterion checks, author-reviewer separation, confidence requirements, preserved revision history, audit events, and fail-closed Founder escalation.
+- Kept standalone documents, code deliveries, unavailable external work, uncertainty, repeated review failure, and exhausted budgets behind Founder review or approval. Existing approved plans do not acquire the new autonomy policy retroactively.
+- Added goal and project progress that counts original work rather than coordination tasks, a distinct `reporting` state, visible model-run usage, and a prominent final-report card.
+- Reserved model-run units only after task identity, capability, scope, and policy checks pass. Denied operations do not consume the autonomy budget.
+- Added server-side rejection of system-managed plan and review fields on the generic task endpoint and blocked all managed model tools from generic invocation.
+- Verified 43 automated tests covering the prior behavior plus automatic revision, independent acceptance, final reporting, budget exhaustion and extension, Founder supersession, retry, invalid quality decisions, and non-retroactive legacy behavior. The real browser proposal remains unapproved and was not started on behalf of the Founder.
+
 ## Architecture snapshot
 
 ```text

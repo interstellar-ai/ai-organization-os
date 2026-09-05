@@ -19,7 +19,7 @@ This file is the short operating contract for coding agents working in this repo
 1. Keep public-facing UI, documentation, comments, and commit messages in English.
 2. Never commit API keys, access tokens, cookies, personal email addresses, local filesystem paths, machine names, or private user data.
 3. Keep runtime state out of Git. `data/state.json` is local-only and is ignored by `.gitignore`.
-4. A task may be marked `completed` only when its executor produces output and evidence. CEO proposals require explicit plan approval before creating employee work. General deliveries and plan-generated code deliveries require Founder acceptance. Legacy deterministic tools remain available internally; custom tasks without an executor must remain blocked.
+4. A task may be marked `completed` only when its executor produces output and evidence. CEO proposals require explicit plan approval before creating employee work. Standalone general deliveries, plan-generated code, external work, and escalated document deliveries require Founder acceptance. A document task inside a newly approved controlled-autonomy plan may be accepted only by an independent reviewer after every criterion passes with sufficient confidence. Legacy deterministic tools remain available internally; custom tasks without an executor must remain blocked.
 5. External or high-impact actions require an explicit tool, scoped permissions, an audit record, and human approval where appropriate.
 6. Preserve the public repository's single source of truth: `origin/main`.
 

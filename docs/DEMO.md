@@ -61,7 +61,7 @@ Open Reports and Audit.
 
 Return to Home or Projects.
 
-> The v0.7 development version connects goals to CEO proposals, approved projects, assigned employee tasks, and accepted document handoffs. Next come stronger quality gates, code integration, durable execution, budgets, and scoped external connectors.
+> The v0.8 development version connects goals to CEO proposals, approved projects, assigned employee tasks, independent document review, bounded automatic revision, model-run budgets, and a final CEO report. Next come code integration, durable execution, stronger factual verification, and scoped external connectors.
 
 End with the repository URL:
 

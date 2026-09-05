@@ -196,7 +196,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/goal-ui.js") return serveStatic(response, "goal-ui.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.7.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.8.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
@@ -239,8 +239,14 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && ["plan", "replan"].includes(parts[3])) return json(response, 201, workflow.startPlanning(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "approve-plan") return json(response, 200, workflow.approvePlan(parts[2], await body(request)));
+    if (request.method === "POST" && parts[1] === "goals" && parts[3] === "extend-budget") return json(response, 200, workflow.extendBudget(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "configure-code") return json(response, 200, workflow.configureCodeTask(parts[2], await body(request)));
-    if (request.method === "POST" && url.pathname === "/api/tasks") return json(response, 201, organization.createTask(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/tasks") {
+      const input = await body(request);
+      const reserved = ["planId", "projectId", "taskKind", "reviewTargetTaskId", "reviewRound", "autoRevisionCount", "autoRetryCount", "founderReviewRequired", "requestSource"];
+      if (reserved.some((field) => Object.hasOwn(input, field))) return json(response, 400, { error: "System-managed task fields are not accepted by this endpoint" });
+      return json(response, 201, organization.createTask(input));
+    }
     if (request.method === "POST" && url.pathname === "/api/work-requests") {
       return json(response, 201, organization.createWorkRequest(await body(request), { codexAvailable: codexExecutor.status().available, generalAvailable: generalExecutor.status().available }));
     }
@@ -269,7 +275,7 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
       const input = await body(request);
-      if (["agent.general", "goal.plan"].includes(input.name)) return json(response, 400, { error: "Use a work request or goal to execute this managed tool" });
+      if (["agent.general", "goal.plan", "delivery.review"].includes(input.name)) return json(response, 400, { error: "Use a work request or goal to execute this managed tool" });
       const task = input.taskId ? organization.getTask(input.taskId) : null;
       if (task?.planId) return json(response, 400, { error: "Approved plan tasks must execute through the scheduler" });
       const agent = input.agentId ? organization.list("agents").find((item) => item.id === input.agentId) || null : null;
@@ -277,7 +283,7 @@ async function route(request, response) {
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {
-    const status = /required|not found|dependencies|Unknown tool|executor|evidence|authorization|identity|access scope/i.test(error.message) ? 400 : 500;
+    const status = /required|not found|dependencies|Unknown tool|executor|evidence|authorization|identity|access scope|budget|model runs|controlled autonomy|selected task|cumulative/i.test(error.message) ? 400 : 500;
     return json(response, status, { error: error.message });
   }
 }

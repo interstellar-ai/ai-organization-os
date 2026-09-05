@@ -83,6 +83,8 @@ The current version provides:
 - Model-backed CEO planning with clarification, bounded project/task proposals, dependency validation, and explicit Founder confirmation;
 - Atomic and repeat-safe creation of real projects and assigned employee tasks from the current approved proposal;
 - Accepted dependency-artifact handoffs within the same approved plan, plus project and goal delivery-progress summaries;
+- Controlled autonomy consent with independent document review, up to two automatic revisions, transient provider retries, and a bounded model-run budget;
+- Automatic AI CEO final reporting after all original work deliveries are accepted, with delivery completion separated from verified business outcomes;
 - Dependency-aware task scheduling;
 - Basic memory search and write operations;
 - A small allowlisted tool registry;
@@ -103,14 +105,14 @@ The current version provides:
 - Per-task detached Git worktrees, Codex workspace-write sandboxing, sanitized process environments, execution timeouts, bounded output, changed-file summaries, and evidence;
 - A Founder-facing general work-request form with automatic work-type classification and employee routing;
 - Codex-backed general employees producing Markdown, text, CSV, and JSON documents from supplied context;
-- Clarifying questions, Founder replies, revision history, downloadable files, and explicit acceptance for general deliveries;
+- Clarifying questions, Founder replies, revision history, downloadable files, explicit acceptance for standalone and escalated work, and independent acceptance for approved plan documents;
 - Permissioned general-runtime access, two-task concurrency, one running task per employee, and interrupted-run recovery;
 - JSON persistence for single-machine development;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning for CEO planning, general document work, and software development. Home starts CEO planning; the Founder reviews the proposal in Goals before projects and delivery tasks are created. The standalone work-request classifier remains deterministic. Live research, web retrieval, image generation, publishing, outbound sales, durable multi-user storage, authenticated runtime identity, budget enforcement, production-grade isolation, general output data-flow controls, durable queues, project-scoped asset policies, automatic code integration, and external execution approval gates remain future work. See [Goal planning](GOAL_PLANNING.md) and [General Agent execution](GENERAL_AGENT_EXECUTION.md).
+The current version uses real model reasoning for CEO planning, general document work, independent review, final reporting, and software development. Home starts CEO planning; the Founder reviews the proposal and autonomy budget in Goals before projects and delivery tasks are created. The standalone work-request classifier remains deterministic. Live research, web retrieval, image generation, publishing, outbound sales, durable multi-user storage, authenticated runtime identity, currency or token budgets, production-grade isolation, general output data-flow controls, durable queues, project-scoped asset policies, automatic code integration, and external execution approval gates remain future work. See [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), and [General Agent execution](GENERAL_AGENT_EXECUTION.md).
 
 ## Task state semantics
 
@@ -119,8 +121,11 @@ The UI and API should distinguish these states:
 - `pending`: the task is waiting for execution;
 - `running`: an executor is working;
 - `needs_input`: the employee has questions for the Founder;
-- `awaiting_review`: a general delivery exists and awaits acceptance or feedback;
-- `completed`: evidence-backed output exists; general deliveries additionally require Founder acceptance;
+- `awaiting_quality_review`: an approved-plan document exists and awaits independent evaluation;
+- `awaiting_review`: a standalone, code, uncertain, or escalated delivery awaits Founder acceptance or feedback;
+- `reporting`: all original work deliveries are accepted and the AI CEO final report is pending;
+- `superseded`: internal coordination work was replaced by an explicit Founder decision and will not run;
+- `completed`: evidence-backed output exists and its required Founder or independent-review gate passed;
 - `blocked`: a dependency, permission, or missing input prevents progress;
 - `failed`: execution attempted and failed;
 - Access approvals are separate records; they are not delivery acceptance.
@@ -129,9 +134,9 @@ Goal-plan tasks use deterministic local tools and must produce evidence. A route
 
 ## Roadmap
 
-1. Extend the general document executor with permission-filtered context retrieval and independent artifact evaluation; keep external actions behind explicitly approved tools.
+1. Extend the general document executor with permission-filtered context retrieval and stronger factual artifact evaluation; keep external actions behind explicitly approved tools.
 2. Add Founder review, diff inspection, apply/reject, cleanup, cancellation, retry, and concurrency limits to the Codex software-development workflow.
-3. Extend the CEO planner with budgets, in-place replanning, cancellation, and stronger independent quality gates while keeping Responses API support optional.
+3. Extend the CEO planner with editable currency or token budgets, in-place replanning, cancellation, and reviewer performance while keeping Responses API support optional.
 4. Replace JSON persistence with SQLite or Postgres and add migrations.
 5. Replace the in-process scheduler with a durable queue and worker model.
 6. Add scoped connectors for GitHub review/push, research, browser automation, email, CRM, and publishing.

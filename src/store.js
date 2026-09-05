@@ -70,6 +70,14 @@ function normalizeState(input) {
       executionHistory: [],
       projectId: null,
       taskKind: "work",
+      planId: null,
+      executionMode: null,
+      reviewTargetTaskId: null,
+      reviewRound: 0,
+      autoRevisionCount: 0,
+      autoRetryCount: 0,
+      founderReviewRequired: false,
+      nextAttemptAt: null,
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"
@@ -86,7 +94,7 @@ function normalizeState(input) {
   });
 
   state.goals = state.goals.map((goal) => {
-    if (goal.executionStatus) return goal;
+    if (goal.executionStatus) return { autonomyPolicy: null, autonomyUsage: { modelRuns: 0 }, ...goal };
     const tasks = state.tasks.filter((task) => task.goalId === goal.id);
     const executionStatus = tasks.length === 0
       ? "not_started"
@@ -95,7 +103,7 @@ function normalizeState(input) {
         : tasks.every((task) => task.status === "completed")
           ? "awaiting_review"
           : "in_progress";
-    return { ...goal, executionStatus };
+    return { autonomyPolicy: null, autonomyUsage: { modelRuns: 0 }, ...goal, executionStatus };
   });
   return state;
 }

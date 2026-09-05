@@ -3,7 +3,7 @@
 This is a runnable first version of an AI Organization OS. It validates the smallest goal-driven organization loop:
 
 ```text
-Founder goal → CEO clarification and proposal → Founder approval → projects and tasks → employee execution → accepted handoffs → delivery progress
+Founder goal → CEO proposal → Founder approval → employee execution → independent review and bounded revision → CEO report
 ```
 
 ![AI Organization OS Founder Command Center](docs/images/founder-command-center.png)
@@ -31,7 +31,7 @@ The Projects page accepts general Founder work requests across product, research
 
 Start on **Home** with an outcome and constraints. The AI CEO proposes projects, employee assignments, deliverables, and dependencies, or asks clarifying questions. Review the proposal in **Goals** and choose **Confirm plan and start work**. Only then does the system create real **Projects** and queue employee tasks. Simple goals may use direct tasks without a project.
 
-Open a task in **Projects** to read or download files, send feedback, and **Accept delivery**. Accepted dependency documents are supplied to the next assigned employee within the approved plan. A general task stays `awaiting_review` until accepted. **New work request** remains available for standalone work. See [Goal planning](docs/GOAL_PLANNING.md) and [General Agent execution](docs/GENERAL_AGENT_EXECUTION.md).
+Plan confirmation activates controlled autonomy for the displayed scope and budget. Internal document tasks are independently reviewed and can be revised automatically up to twice. Passing work unlocks accepted dependency handoffs; exceptions return to the Founder. After all work is accepted, the AI CEO generates a final evidence and outcome report. Standalone work and code deliveries still require Founder acceptance. **New work request** remains available for standalone work. See [Goal planning](docs/GOAL_PLANNING.md), [Controlled autonomy](docs/CONTROLLED_AUTONOMY.md), and [General Agent execution](docs/GENERAL_AGENT_EXECUTION.md).
 
 Run the test suite with:
 
@@ -55,13 +55,14 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Request CEO planning or clarification | `POST /api/goals/:id/plan` |
 | Revise an unapproved proposal | `POST /api/goals/:id/replan` |
 | Approve the current proposal and create work | `POST /api/goals/:id/approve-plan` |
+| Approve a bounded model-run extension | `POST /api/goals/:id/extend-budget` |
 | Projects, progress, and associated tasks | `GET /api/projects` |
 | Bind a blocked plan code task to an explicit codebase | `POST /api/tasks/:id/configure-code` |
 | Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
 | Classify and route a Founder work request | `POST /api/work-requests` |
 | Reply, request revision, or retry general work | `POST /api/tasks/:id/feedback` |
-| Accept a general delivery | `POST /api/tasks/:id/accept` |
+| Accept a standalone, code, or escalated delivery | `POST /api/tasks/:id/accept` |
 | Download a current artifact | `GET /api/tasks/:id/artifacts/:index` |
 | Codex runtime status | `GET /api/codex/status` |
 | Create a protected coding task | `POST /api/coding/tasks` |
@@ -77,15 +78,16 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
 | Consume authorized access | `POST /api/access/consume` |
 
-The current tool set includes `goal.plan`, `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, `agent.general`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. `agent.general` and `goal.plan` run through assigned running tasks, not the generic tool endpoint. Every completed task requires evidence.
+The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, `agent.general`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Managed model tools run only through assigned running tasks, not the generic tool endpoint. Every completed task requires evidence.
 
 ## Current boundaries
 
-- The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority, with at most two running tasks and one per employee. Interrupted tasks become failed on restart and require an explicit retry.
+- The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority, with at most two running tasks and one per employee. Controlled plans retry transient provider failures up to three attempts; interrupted tasks become failed on restart and require an explicit retry.
 - New goal plans use real Codex reasoning and host-validated project/task graphs. Up to five projects and sixteen tasks can be proposed. Clarification and plan revision do not launch delivery work. Approval is atomic and repeat-safe.
 - Legacy fixed five-stage workflows are preserved as historical data; new Home and goal-plan requests use the CEO planner. Approved plans cannot yet be edited in place.
 - General execution returns Markdown, text, CSV, or JSON from supplied context. It does not retrieve private assets or memories automatically, browse, send messages, publish, or generate images. Design output is a textual specification; research is analysis of supplied material or labeled general knowledge.
-- General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct; Founder review is required. Feedback preserves prior versions.
+- General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct. Approved plan documents require independent criterion review and may auto-revise twice; standalone and escalated work requires Founder review. Feedback preserves prior versions.
+- Controlled plans enforce a displayed model-invocation budget and automatically generate a final CEO report. Delivery completion remains separate from verified business outcomes.
 - JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
 - Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.
 - One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
@@ -102,7 +104,8 @@ The current tool set includes `goal.plan`, `goal.analyze`, `solution.design`, `m
 2. **v0.5: Codex-first coding executor** — Add protected Codex work orders, isolated Git worktrees, runtime health, evidence, and a Founder-facing assignment form.
 3. **v0.6: General document execution** — Codex-backed employees, validated deliverables, clarification, revision history, human acceptance, bounded concurrency, and restart recovery. An LLM-backed planner/router, database-backed queue, cancellation, budgets, and independent review remain next steps.
 4. **v0.7: Goal-to-project orchestration** — CEO clarification, validated proposals, explicit approval, atomic project/task creation, assigned employees, accepted dependency handoffs, and aggregate delivery progress. Scoped external connectors remain future work.
-5. **v0.8: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
-6. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, budget controls, compliance, and observability.
+5. **v0.8: Controlled autonomy** — Add independent document review, automatic revision, transient retry, model-run budgets, escalation, and final CEO reporting.
+6. **v0.9: Organizational learning layer** — Add tiered long-term memory, knowledge retrieval, reviewer and employee performance, and cost monitoring.
+7. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, currency budgets, compliance, and observability.
 
-The confirmed first scenario is an AI Software Product Studio. Document-based collaboration now runs through approved plans. Code integration, autonomous quality gates, business-outcome verification, and scoped external connectors remain distinct next steps. A 100% delivery indicator is not proof that a business goal has been achieved.
+The confirmed first scenario is an AI Software Product Studio. Document collaboration now runs through approved plans and controlled quality gates. Code integration, business-outcome verification, and scoped external connectors remain distinct next steps. A 100% delivery indicator is not proof that a business goal has been achieved.

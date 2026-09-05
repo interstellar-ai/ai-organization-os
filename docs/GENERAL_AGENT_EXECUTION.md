@@ -12,7 +12,7 @@ Product briefs, plans, textual design specifications, content drafts, sales scri
 2. The system selects a capable employee and queues standalone work. Home instead starts [CEO goal planning](GOAL_PLANNING.md), which requires plan confirmation before delivery tasks are created.
 3. Open **Open work and delivery** to inspect returned documents or questions.
 4. Reply using **Send and continue** to clarify or request a revision. The prior result is retained in delivery history.
-5. Read or download the latest files and choose **Accept delivery**. A file's presence alone never automatically accepts a general task.
+5. Read or download the latest files and choose **Accept delivery** for standalone work. Documents in a newly approved controlled plan instead require a passing independent review; exceptions return to the Founder.
 
 An existing blocked non-software request can be retried from the same panel after its runtime or permission issue is resolved. Existing tasks are not silently re-executed during an upgrade.
 
@@ -22,9 +22,9 @@ An existing blocked non-software request can be retried from the same panel afte
 
 Alternative outcomes are `needs_input`, `blocked`, or `failed`. Replies and explicit retries return eligible work to `pending`. A revision keeps earlier files, evidence, and the Founder conversation. The latest summary and files, plus the conversation, form the next provider context; old versions are not all resent.
 
-The provider must return a structured outcome, summary, questions, limitations, and up to five artifacts. Filenames are simple English names with `.md`, `.txt`, `.csv`, or `.json` extensions. The host validates nonempty content, bounded size, unique safe names, and JSON syntax where applicable. It calculates byte counts and SHA-256 hashes and records available token usage. These are structural and provenance checks, not factual validation or independent quality review.
+The provider must return a structured outcome, summary, questions, limitations, and up to five artifacts. Filenames are simple English names with `.md`, `.txt`, `.csv`, or `.json` extensions. The host validates nonempty content, bounded size, unique safe names, and JSON syntax where applicable. It calculates byte counts and SHA-256 hashes and records available token usage. These are structural and provenance checks. Controlled plan documents additionally receive model-based independent quality review, which is bounded and auditable but not infallible.
 
-Artifacts are persisted in local `data/state.json`, rendered as escaped text, and downloadable through `GET /api/tasks/:id/artifacts/:index`. They are not committed to Git. Failed and interrupted runs are visible, not silently retried. The in-process scheduler allows two concurrent tasks, with only one task per employee.
+Artifacts are persisted in local `data/state.json`, rendered as escaped text, and downloadable through `GET /api/tasks/:id/artifacts/:index`. They are not committed to Git. Controlled plans retry only temporary provider failures within their approved attempt and model-run limits. Other failures remain visible. Interrupted runs are not silently restarted. The in-process scheduler allows two concurrent tasks, with only one task per employee.
 
 ## Permission and process boundary
 
@@ -40,8 +40,8 @@ Missing sign-in or CLI availability blocks intake. Missing inputs produce questi
 
 ## Next iterations
 
-1. Add independently evaluated acceptance criteria and a reviewer work order before Founder acceptance.
-2. Extend the implemented CEO planner with budgets, cancellation, and approved in-place scope changes. Keep planning separate from execution authority.
+1. Add reviewer performance evaluation, stronger factual verification, and policy-aware context retrieval to the implemented quality gate.
+2. Extend the implemented CEO planner with cancellation, budget editing, and approved in-place scope changes. Keep planning separate from execution authority.
 3. Add permission-filtered retrieval and brokered tools. Validate each operation outside the model using runtime identity, task scope, target asset, and approval; never hand the model unrestricted credentials.
 4. Move execution to a persistent queue and database with cancellation, leases, idempotency, cost limits, and retry policies.
 5. Add separately optional providers, including Responses API, without changing employee permissions or the delivery contract.
