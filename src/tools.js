@@ -33,6 +33,11 @@ export class ToolRegistry {
   async execute(name, input, context = {}) {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: ${name}`);
+    if (tool.options.requiresRunningTask) {
+      const persisted = context.task && context.organization?.getTask(context.task.id);
+      if (!persisted || persisted.status !== "running" || persisted.toolName !== name || persisted.assignedAgentId !== context.agent?.id
+        || persisted.input.assetId !== input?.assetId) throw new Error("Tool requires its assigned running task");
+    }
     if ((tool.options.requiresIdentity || tool.options.authorize) && !context.agent) {
       context.organization?.recordEvent("tool.denied", { toolName: name, reason: "Missing employee identity" });
       throw new Error("Tool identity required");
@@ -100,10 +105,10 @@ export function createDefaultTools(organization, options = {}) {
         goalId: goal.id,
         agentCount: organization.list("agents").length,
         toolCount: organization.tools.list().length,
-        persistence: "JSON file for local development",
-        scheduler: "In-process interval scheduler",
-        externalConnectors: [],
-        limitations: ["No LLM provider", "No external publishing connector", "No production database", "No approval UI"]
+        persistence: "Transactional local store selected by the host",
+        scheduler: "Persisted task leases with an in-process dispatcher",
+        externalConnectors: organization.list("assets").filter((asset) => asset.type === "external_connector").map((asset) => asset.connectorType),
+        limitations: ["Single-node trusted runtime", "No multi-tenant authentication", "No distributed worker fleet", "No automatic deployment"]
       };
       return {
         kind: "mvp_inspection",
@@ -135,7 +140,7 @@ export function createDefaultTools(organization, options = {}) {
     })
     .register("iteration.record", "Record the next iteration and its local evidence in organization memory", (_input, { task }) => {
       const goal = goalForTask(organization, task);
-      const content = `Next iteration for ${goal.title}: connect one approved external workflow after replacing the local placeholder boundary with a real connector and evidence record.`;
+      const content = `Next iteration for ${goal.title}: evaluate current evidence, resolve blocked approvals, and add only the smallest scoped connector or execution capability required by the next verified outcome.`;
       const memory = organization.writeMemory({
         scope: `goal:${goal.id}`,
         content,
@@ -208,7 +213,12 @@ export function createDefaultTools(organization, options = {}) {
   if (options.codexExecutor) {
     registry.register("code.codex", "Implement an assigned coding task with Codex in an isolated Git worktree", async (input, { task, agent }) => {
       const asset = organization.list("assets").find((item) => item.id === input.assetId);
-      const result = await options.codexExecutor.execute({ task, agent, asset });
+      const handoffs = organization.workflow?.dependencyContext(task) || [];
+      const codeDependencies = task.dependsOn.map((dep) => organization.getTask(dep)).filter((dep) => dep.executionMode === "code");
+      if (codeDependencies.some((dep) => dep.integrationStatus !== "integrated")) throw new Error("Upstream code must be reviewed and integrated before dependent coding starts");
+      organization.workflow?.requireModelRun(task);
+      const result = await options.codexExecutor.execute({ task: { ...task, input: { ...task.input, ...(codeDependencies.length ? { baseRef: "codex/integration" } : {}) },
+        context: [task.context, handoffs.length ? `Accepted dependency deliveries: ${JSON.stringify(handoffs)}` : ""].filter(Boolean).join("\n") }, agent, asset });
       return {
         ...result,
         evidence: [evidence("codex_execution", "Codex completed a sandboxed coding run and returned inspectable workspace evidence.", {
@@ -226,6 +236,16 @@ export function createDefaultTools(organization, options = {}) {
     }, {
       authorize: (input) => ["read", "modify", "execute"].map((action) => ({ assetId: input.assetId, action }))
     });
+  }
+  if (options.generalExecutor) {
+    registry.register("agent.general", "Deliver documents or clarification from an assigned employee", async (_input, { task, agent }) => {
+      const persisted = organization.getTask(task.id);
+      const employee = organization.list("agents").find((item) => item.id === agent.id);
+      if (!employee.capabilities.includes(persisted.routing?.requiredCapability)) throw new Error("Employee capability is required for this work");
+      const dependencyDeliveries = organization.workflow?.dependencyContext(persisted) || [];
+      organization.workflow?.requireModelRun(persisted);
+      return options.generalExecutor.execute({ task: { ...persisted, dependencyDeliveries }, agent: employee });
+    }, { requiresRunningTask: true, authorize: (input) => ({ assetId: input.assetId, action: "execute" }) });
   }
   return registry;
 }

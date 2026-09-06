@@ -103,6 +103,40 @@ This file records dated implementation facts and decisions. Stable product defin
 - Kept Codex as the connected executor for software-development work while leaving unsupported specialties honestly `blocked` with an explicit next action.
 - Added a general `POST /api/work-requests` endpoint, routing metadata, execution-coverage messaging, and automated routing tests.
 
+## 2026-09-05 — General Agent document execution
+
+- Added a replaceable general-work execution contract with Codex CLI as the first provider, using existing ChatGPT sign-in without a Responses API dependency.
+- Added actual Markdown, text, CSV, and JSON delivery, structured clarification or blocker outcomes, artifact validation, byte counts, hashes, and usage evidence.
+- Protected execution with employee capability, assigned running task, expiring runtime scope, asset policy, disabled general-agent tools, bounded output, timeout, and a temporary read-only workspace.
+- Added Projects delivery viewing and downloading, Founder feedback, prior-version history, and explicit acceptance. Home can send a confirmed brief to an AI CEO document task; autonomous planning is not implemented.
+- Added two-task concurrency, one running task per employee, duplicate-run refusal, and recovery of interrupted tasks to an explicit failed state.
+- Bound the local server to loopback and rejected cross-origin browser POST requests and non-JSON mutation requests. The application remains a trusted single-Founder development surface.
+- Verified all 28 automated tests, browser-script syntax, whitespace checks, and English-only and personal-information scans.
+- Verified real Codex execution through the browser with a fictional reading-list product brief, followed by a requested revision. The latest downloaded file contained 335 whitespace-delimited words, exactly three acceptance criteria, and the requested risks section. Its 1,991-byte content matched the stored SHA-256 hash; the first version remained in history.
+- Verified invalid artifact downloads returned 404 and a disallowed browser-origin acceptance request returned 403. The real demo remains awaiting Founder acceptance; acceptance and invalid-state rejection were verified in automated tests, not by accepting on behalf of the Founder.
+- Kept live research, external actions, autonomous multi-employee planning, independent quality evaluation, production isolation, and durable workers as explicit next iterations.
+
+## 2026-09-05 — Goal-to-project orchestration
+
+- Replaced the Home document-only goal intake with a protected model-backed CEO planning task. Existing legacy goal records remain unchanged.
+- Added real project records and a bounded proposal schema covering projects, employee assignments, deliverables, acceptance criteria, execution modes, and dependencies. Simple goals can use direct tasks.
+- Added clarification, pre-approval revision, current-proposal identity checks, employee-capability validation, cycle detection, and atomic repeat-safe confirmation. Delivery tasks are not created before confirmation.
+- Added Goals plan review and conversation, Projects task lists and progress, accepted dependency-artifact handoffs with audit records, and explicit codebase selection for planned coding work.
+- Preserved runtime policy checks, external-action blockers, isolated coding worktrees, and human delivery acceptance. Goal execution delivery remains separate from unverified business outcomes.
+- Verified 37 automated tests covering orchestration, dependency gating and data handoff, stale and repeated confirmations, clarification, invalid graphs, atomic rollback, code permission checks, and unrelated-goal handoff denial.
+- Verified a real Codex-backed CEO call through Home. It proposed two document projects and two assigned tasks for a fictional reading-list launch package, with the launch copy depending on the product brief. The browser displayed the complete proposal and no console errors; the proposal remains awaiting Founder confirmation.
+- The full approval-to-delivery chain was verified using isolated test stores and controlled provider responses. The real demonstration was not approved or accepted on behalf of the Founder.
+
+## 2026-09-05 — Controlled autonomy
+
+- Added an explicit autonomy policy at plan confirmation: independent review for internal document tasks, up to two automatic revision rounds, up to three attempts for transient provider failures, a plan-sized model-run budget, and a final AI CEO report.
+- Added a separate protected `delivery.review` executor contract with exact acceptance-criterion checks, author-reviewer separation, confidence requirements, preserved revision history, audit events, and fail-closed Founder escalation.
+- Kept standalone documents, code deliveries, unavailable external work, uncertainty, repeated review failure, and exhausted budgets behind Founder review or approval. Existing approved plans do not acquire the new autonomy policy retroactively.
+- Added goal and project progress that counts original work rather than coordination tasks, a distinct `reporting` state, visible model-run usage, and a prominent final-report card.
+- Reserved model-run units only after task identity, capability, scope, and policy checks pass. Denied operations do not consume the autonomy budget.
+- Added server-side rejection of system-managed plan and review fields on the generic task endpoint and blocked all managed model tools from generic invocation.
+- Verified 43 automated tests covering the prior behavior plus automatic revision, independent acceptance, final reporting, budget exhaustion and extension, Founder supersession, retry, invalid quality decisions, and non-retroactive legacy behavior. The real browser proposal remains unapproved and was not started on behalf of the Founder.
+
 ## Architecture snapshot
 
 ```text
@@ -112,18 +146,23 @@ public/index.html + public/styles.css + public/app.js
           → Agent / Goal / Task / Memory domain objects
           → Job Template / Asset / Policy / Access Request domain objects
           → Scheduler
+          → src/goal-workflow.js (CEO proposals, approved projects, dependency handoffs)
           → src/tools.js (allowlisted tools)
               → src/executors/codex.js (protected coding worktrees)
-              → src/store.js (local JSON persistence)
+              → src/executors/general.js (structured employee documents)
+              → src/executors/integration.js (reviewed integration branch and test gate)
+              → src/executors/connectors.js (research, email, CRM, publishing)
+              → src/sqlite-store.js (transactional local persistence)
+              → src/store.js (legacy JSON adapter and state normalization)
 ```
 
-The scheduler is currently an in-process timer. The store is currently a JSON file. Both are deliberate replacement boundaries for a future worker queue and database.
+The scheduler is an in-process dispatcher with atomic, persisted leases and recovery. SQLite is the default transactional store. Both retain clear adapter boundaries for future distributed workers and PostgreSQL.
 
 ## Decisions
 
-### Local-first storage for the MVP
+### Durable local-first storage
 
-JSON persistence keeps the prototype dependency-free and easy to inspect. It is not suitable for multi-process, multi-user, or high-concurrency production use.
+SQLite WAL persistence gives the single-node runtime atomic commits and crash recovery while keeping deployment simple. The legacy JSON adapter remains available for migration checks. Multi-tenant and horizontally scaled production still requires PostgreSQL, authenticated tenant boundaries, backups, and dedicated workers.
 
 ### Fixed planner before model planner
 
@@ -145,3 +184,15 @@ Legacy tasks without a registered tool may contain a placeholder completion mess
 ## Ongoing notes
 
 Add new entries under this heading with the date, change, decision, and verification result. Do not grow the product document with temporary debugging details or one-off deployment notes.
+
+## 2026-09-06 — Durable controlled execution
+
+- Replaced default JSON writes with transactional SQLite WAL state, schema revision metadata, rollback behavior, and one-time legacy JSON import. Runtime database files remain ignored.
+- Added atomic task claims, persisted lease IDs and expirations, startup recovery, live expired-lease recovery, dependency checks, two-task capacity, and one-task-per-employee enforcement.
+- Added Founder-gated code integration from accepted task worktrees into a local `codex/integration` branch, including safe-file inspection, common credential-pattern checks, conflict abort, allowlisted test commands, and test-failure reversion.
+- Made downstream code and final reporting wait for successful upstream code integration. Integration never pushes, merges `main`, or deploys.
+- Added host-controlled connectors for explicit public-HTTPS research, optional Brave Search, Resend email, HubSpot record creation, and approved publishing webhooks.
+- Added exact external-action previews, one-use policy grants, receipts, audit events, SSRF-oriented URL checks, bounded responses, and uncertain-outcome handling that prevents blind side-effect retries.
+- Added Founder UI for external connector configuration, code and action approvals, connector readiness, receipts, integration status, and durable runtime status.
+- Added focused automated tests for SQLite rollback and reopening, lease recovery, pre-approval network isolation, private-address rejection, uncertain side effects, separate code-integration approval, and real temporary Git integration.
+- Kept the runtime explicitly single-node and trusted. PostgreSQL, distributed workers, authentication, managed secrets, container isolation, remote pull requests, deployment, and disaster recovery remain v1 infrastructure work.

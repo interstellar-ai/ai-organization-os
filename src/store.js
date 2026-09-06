@@ -1,22 +1,26 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const EMPTY_STATE = {
+export const EMPTY_STATE = {
   agents: [],
   goals: [],
+  projects: [],
   tasks: [],
   memories: [],
   events: [],
   assets: [],
   policies: [],
   accessRequests: [],
-  jobTemplates: []
+  jobTemplates: [],
+  integrationRequests: [],
+  externalActions: []
 };
 
-function normalizeState(input) {
+export function normalizeState(input) {
   const state = { ...EMPTY_STATE, ...input };
   state.agents = Array.isArray(state.agents) ? state.agents : [];
   state.goals = Array.isArray(state.goals) ? state.goals : [];
+  state.projects = Array.isArray(state.projects) ? state.projects : [];
   state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
   state.memories = Array.isArray(state.memories) ? state.memories : [];
   state.events = Array.isArray(state.events) ? state.events : [];
@@ -29,6 +33,8 @@ function normalizeState(input) {
   }) : [];
   state.accessRequests = Array.isArray(state.accessRequests) ? state.accessRequests : [];
   state.jobTemplates = Array.isArray(state.jobTemplates) ? state.jobTemplates : [];
+  state.integrationRequests = Array.isArray(state.integrationRequests) ? state.integrationRequests : [];
+  state.externalActions = Array.isArray(state.externalActions) ? state.externalActions : [];
 
   state.agents = state.agents.map((agent) => ({
     templateId: null,
@@ -64,6 +70,20 @@ function normalizeState(input) {
       context: "",
       routing: null,
       nextAction: null,
+      messages: [],
+      executionHistory: [],
+      projectId: null,
+      taskKind: "work",
+      planId: null,
+      executionMode: null,
+      reviewTargetTaskId: null,
+      reviewRound: 0,
+      autoRevisionCount: 0,
+      autoRetryCount: 0,
+      founderReviewRequired: false,
+      nextAttemptAt: null,
+      leaseId: null,
+      leaseExpiresAt: null,
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"
@@ -80,7 +100,7 @@ function normalizeState(input) {
   });
 
   state.goals = state.goals.map((goal) => {
-    if (goal.executionStatus) return goal;
+    if (goal.executionStatus) return { autonomyPolicy: null, autonomyUsage: { modelRuns: 0 }, ...goal };
     const tasks = state.tasks.filter((task) => task.goalId === goal.id);
     const executionStatus = tasks.length === 0
       ? "not_started"
@@ -89,7 +109,7 @@ function normalizeState(input) {
         : tasks.every((task) => task.status === "completed")
           ? "awaiting_review"
           : "in_progress";
-    return { ...goal, executionStatus };
+    return { autonomyPolicy: null, autonomyUsage: { modelRuns: 0 }, ...goal, executionStatus };
   });
   return state;
 }

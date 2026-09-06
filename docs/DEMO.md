@@ -9,7 +9,7 @@ npm test
 npm start
 ```
 
-Open <http://localhost:3333/>. To show the Codex coding workflow, install the Codex CLI and sign in with ChatGPT before recording.
+Open <http://localhost:3333/>. Install the Codex CLI and sign in with ChatGPT before starting the server to show real employee execution.
 
 Use a clean local runtime state. Do not record personal goals, credentials, browser tabs, terminal history, account identifiers, or local filesystem paths.
 
@@ -41,15 +41,15 @@ Show an effective-access explanation or policy impact preview. Do not approve an
 
 ### 1:30–2:10 — General work request and routed execution
 
-Open Projects and select **New work request**.
+On Home, submit a small fictional document-only goal with two deliverables. In Goals, inspect the CEO proposal before confirming it. Then show the resulting Projects and employee tasks. For a shorter standalone demonstration, use **New work request** in Projects.
 
 > The Founder describes a desired business outcome rather than choosing a technical tool. The system classifies the request, assigns the appropriate employee, and selects an approved executor. Product, research, design, software, content, sales, operations, and general work share the same intake contract.
 
 Point out the execution-coverage badge and notice.
 
-> Codex is currently the only connected model executor, so software-development requests can run while other specialties remain visibly blocked with a next action. Every Codex task runs in a detached Git worktree with workspace-only writes and cannot push, merge, deploy, or use external services.
+> Codex is the connected model provider. General employees produce documents from supplied context, ask questions, and revise their work. Coding uses a separate protected worktree executor. General work cannot browse, send messages, publish, or deploy.
 
-Do not submit the form unless the demo uses a disposable repository and a deliberately small task.
+For a small real demo, select Product strategy and request a product brief for a fictional reading-list app with exactly three acceptance criteria. Open the returned Markdown document in **Open work and delivery**. Show the download link, feedback box, and acceptance action. Do not submit a software task unless using a disposable repository.
 
 ### 2:10–2:40 — Evidence and audit
 
@@ -61,7 +61,7 @@ Open Reports and Audit.
 
 Return to Home or Projects.
 
-> The current v0.5 MVP proves the controlled organization loop. Next, the project will add Founder diff review and apply-or-reject controls, an API-backed AI CEO and planner, durable execution, and scoped external connectors.
+> The v0.9 development version adds durable local state, leased task recovery, approved code integration, and scoped research, email, CRM, and publishing connectors. Code and external actions remain separate Founder-controlled stages. Next come stronger factual verification, PostgreSQL, distributed workers, authenticated teams, managed secrets, remote pull requests, and deployment controls.
 
 End with the repository URL:
 
@@ -69,8 +69,8 @@ End with the repository URL:
 
 ## Suggested recording title
 
-**AI Organization OS v0.5 — Permissioned AI Employees with Codex**
+**AI Organization OS — Permissioned AI Employees and Real Deliverables**
 
 ## Suggested description
 
-AI Organization OS is an Apache-2.0 open-source operating layer for coordinating AI employees, goals, permissions, tools, evidence, and Founder approvals. This short demo shows the runnable v0.5 MVP and its protected Codex coding workflow.
+AI Organization OS is an Apache-2.0 open-source operating layer for coordinating AI employees, goals, permissions, tools, evidence, and Founder approvals. This demo shows general document delivery with Codex, feedback and acceptance, alongside the separate protected coding workflow.

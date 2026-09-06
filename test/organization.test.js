@@ -293,8 +293,8 @@ test("general work requests are classified, routed and blocked without a connect
   assert.equal(task.status, "blocked");
   assert.equal(task.toolName, null);
   assert.equal(task.routing.mode, "automatic");
-  assert.equal(task.routing.requiredExecutor, "Design executor");
-  assert.match(task.nextAction, /approved design executor/);
+  assert.equal(task.routing.requiredExecutor, "agent.general");
+  assert.match(task.nextAction, /General Agent runtime/);
   assert.notEqual(task.assignedAgentId, ceo.id);
   assert.equal(organization.list("events").some((event) => event.type === "work_request.routed" && event.payload.taskId === task.id), true);
 });
@@ -354,10 +354,12 @@ test("a coding task reaches Codex only after all repository permissions pass", a
     assetId: repository.id,
     acceptanceCriteria: ["Tests pass"]
   });
-  const completed = await organization.executeTask(task.id);
-  assert.equal(completed.status, "completed");
-  assert.deepEqual(completed.output.changedFiles, ["src/feature.js", "test/feature.test.js"]);
-  assert.equal(completed.evidence[0].type, "codex_execution");
+  const delivery = await organization.executeTask(task.id);
+  assert.equal(delivery.status, "awaiting_review");
+  assert.deepEqual(delivery.output.changedFiles, ["src/feature.js", "test/feature.test.js"]);
+  assert.equal(delivery.evidence[0].type, "codex_execution");
+  assert.equal(organization.acceptTask(task.id).status, "completed");
+  assert.equal(organization.list("integrationRequests")[0].status, "pending");
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].task.accessScope[0].actions, ["read", "modify", "execute"]);
   assert.equal(organization.list("events").filter((event) => event.type === "tool.authorized" && event.payload.taskId === task.id).length, 3);

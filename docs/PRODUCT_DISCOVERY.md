@@ -174,7 +174,21 @@ Projects is a provider-neutral delivery workspace. Its primary action is **New w
 
 The routing layer classifies work into product strategy, research, design, software development, content and marketing, sales, operations, or general work. It assigns an appropriate employee and identifies the required executor and assets. A specialized field such as codebase selection appears only when relevant.
 
-Codex remains the first connected executor, but it is an implementation detail below software-development work orders. Requests whose approved executor is not connected remain `blocked` with a visible next action. They must not be falsely completed or silently handed to an unrelated tool.
+Codex remains the first connected provider, but it is an implementation detail below work orders. Requests whose approved executor is not connected remain `blocked` with a visible next action. They must not be falsely completed or silently handed to an unrelated tool.
+
+### D-011 — General document delivery before external autonomy
+
+The general executor uses the existing Codex sign-in to produce actual documents for non-software work. It receives only supplied work context and has no organizational search or external-action tools. It can ask the Founder for missing information. Delivered files enter human review; feedback preserves versions, and only explicit acceptance completes the task. File hashes prove artifact integrity, not correctness. Independent review, multi-employee planning, and permission-brokered external tools remain separate host-controlled subsystems.
+
+### D-012 — Confirmed goals become real projects and employee work
+
+Goals is the outcome and CEO-planning surface. Projects is now backed by independent project records rather than duplicate goal cards. The CEO proposes a bounded project/task graph or asks questions; the Founder confirms assignments and accepted-artifact handoffs before any delivery tasks are created. Simple work may skip the project layer. The host validates the graph and employee capabilities and materializes it atomically and repeat-safely. Dependencies unlock after required review; code dependencies also require successful integration. Delivery completion remains separate from verified business outcomes. Unsupported external actions stay blocked, while supported connectors require exact Founder approval. Approved plans cannot yet be edited in place.
+
+### D-013 — Durable execution and exact external authority
+
+Local state uses transactional SQLite and task execution uses persisted leases so interrupted idempotent work can be recovered without accepting stale worker output. This is a single-node durability layer, not a claim of multi-tenant production readiness.
+
+Code integration and external actions are separate from model execution. Accepted code needs a second Founder decision before it can enter a tested local integration branch. Research, email, CRM, and publishing use host-held connectors, action-bound one-use grants, exact payload previews, and receipts. Side effects with uncertain provider outcomes never retry automatically.
 
 ## Shared product vocabulary
 

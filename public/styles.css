@@ -132,6 +132,12 @@ input, select { min-height: 42px; padding: 0 12px; }
 .goal-card p, .project-card p, .employee-card p, .policy-card p, .approval-card p, .memory-card p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .status.awaiting_review, .status.pending { background: var(--amber-soft); color: var(--amber); }
+.status.needs_input { background: var(--amber-soft); color: var(--amber); }
+.delivery-file { margin: 16px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.delivery-file summary { cursor: pointer; font-weight: 650; }
+.delivery-file pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, monospace; max-height: 65vh; overflow: auto; }
+#workDeliveryPanel { margin-top: 20px; padding: 20px; }
+#workDeliveryContent { overflow-wrap: anywhere; }
 .status.blocked, .status.failed, .status.rejected { background: var(--red-soft); color: var(--red); }
 .status.completed, .status.approved { background: var(--green-soft); color: var(--green); }
 .progress { height: 6px; margin: 14px 0 7px; border-radius: 999px; background: #e8ebe4; overflow: hidden; }
@@ -272,6 +278,13 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
 .approval-card { padding: 18px; }
 .approval-context { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
 .approval-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.approval-decision-form { display: grid; gap: 12px; margin-top: 16px; }
+.approval-card pre, .action-preview pre { max-height: 320px; padding: 12px; overflow: auto; border-radius: 10px; background: #f5f6f1; white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.6 ui-monospace, monospace; }
+.action-preview, .external-config { margin-top: 16px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: #fafbf8; }
+.action-preview p, .external-config p { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.external-config details { margin-top: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.external-config summary { cursor: pointer; font-size: 11px; font-weight: 700; }
+.external-config form { display: grid; gap: 10px; margin-top: 12px; }
 .reject-button { min-height: 38px; padding: 0 13px; border: 1px solid #e1b8b3; border-radius: 9px; background: var(--red-soft); color: var(--red); font-weight: 700; cursor: pointer; }
 .memory-card { padding: 17px; }
 .memory-card h3 { font-family: Georgia, serif; font-size: 16px; font-weight: 500; line-height: 1.4; }
@@ -361,3 +374,15 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .template-footer, .preview-access-row { align-items: stretch; flex-direction: column; }
   .preview-access-row > div { justify-content: flex-start; }
 }
+.plan-task, .plan-project { border: 1px solid var(--border, #dbe2ea); border-radius: 12px; padding: 16px; margin: 12px 0; overflow-wrap: anywhere; }
+.plan-consent { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0; }
+.plan-consent input { width: auto; margin-top: 4px; }
+#goalPlanPanel form { margin-top: 20px; }
+#goalPlanPanel h4 { margin-bottom: 8px; }
+.task-row small { display: block; margin-top: 4px; }
+.status.planning, .status.awaiting_plan_approval { background: #fff3d8; color: #946c00; }
+.status.delivered { background: #e6f5ed; color: #16764b; }
+.status.reporting, .status.awaiting_quality_review { background: #e8f0ff; color: #315ca8; }
+.autonomy-note { color: var(--muted); font-size: 12px; }
+.final-report-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; background: #f8faf7; }
+.final-report-card p { margin: 6px 0; }

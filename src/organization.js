@@ -2,8 +2,11 @@ import crypto from "node:crypto";
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
-const ACCESS_ACTIONS = ["read", "create", "modify", "execute", "share", "publish", "approve", "delete", "grant", "spend"];
-const WORK_TYPES = {
+const ACCESS_ACTIONS = ["read", "create", "modify", "execute", "share", "send", "publish", "approve", "delete", "grant", "spend"];
+export const WORK_TYPES = {
+  review: {
+    label: "Quality review", capability: "validate", preferredJobTypes: ["quality_reviewer", "technical_lead", "ai_ceo"], requiredExecutor: "Review executor"
+  },
   general: {
     label: "General work",
     capability: "iterate",
@@ -257,6 +260,13 @@ export class Organization {
       workspacePath: input.type === "source_code" && typeof input.workspacePath === "string"
         ? input.workspacePath.trim() || null
         : null,
+      integrationTestCommand: input.type === "source_code" && Array.isArray(input.integrationTestCommand)
+        ? input.integrationTestCommand.map((part) => String(part)).slice(0, 4)
+        : null,
+      integrationBaseRef: input.type === "source_code" && typeof input.integrationBaseRef === "string"
+        ? input.integrationBaseRef.trim() || "main"
+        : input.type === "source_code" ? "main" : null,
+      connectorType: input.type === "external_connector" && typeof input.connectorType === "string" ? input.connectorType.trim() : null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -398,11 +408,14 @@ export class Organization {
     const agentId = required(input.agentId, "agentId");
     const assetId = required(input.assetId, "assetId");
     const action = required(input.action, "action").toLowerCase();
-    const [entry] = this.effectiveAccess(agentId, assetId);
+    const [entry] = this.effectiveAccess(agentId, assetId, { externalActionId: input.externalActionId || null });
     const permission = entry.actions.find((item) => item.action === action);
     if (!permission || permission.effect !== "allowed") throw new Error("Access is not allowed");
     const persistentAllow = permission.sources.some((source) => source.type === "policy" && source.effect === "allow");
-    const grant = persistentAllow ? null : permission.sources.find((source) => source.type === "temporary_grant");
+    const grant = persistentAllow ? null : input.grantId
+      ? permission.sources.find((source) => source.type === "temporary_grant" && source.id === input.grantId)
+      : permission.sources.find((source) => source.type === "temporary_grant");
+    if (input.grantId && !grant) throw new Error("Approved grant is no longer available");
     if (grant) {
       this.store.update((state) => {
         const request = state.accessRequests.find((item) => item.id === grant.id);
@@ -419,7 +432,7 @@ export class Organization {
     return { allowed: true, agentId, assetId, action, consumedGrantId: grant?.id || null, event };
   }
 
-  effectiveAccess(agentId, assetId = null) {
+  effectiveAccess(agentId, assetId = null, context = {}) {
     const agent = this.list("agents").find((item) => item.id === agentId);
     if (!agent) throw new Error("Agent not found");
     const assets = this.list("assets").filter((asset) => !assetId || asset.id === assetId);
@@ -429,6 +442,7 @@ export class Organization {
       request.requesterAgentId === agentId
       && request.status === "approved"
       && request.usesRemaining !== 0
+      && (!request.externalActionId || request.externalActionId === context.externalActionId)
       && (!request.expiresAt || new Date(request.expiresAt).getTime() > Date.now())
     );
     return accessForAgent(agent, assets, policies, approvedRequests);
@@ -462,7 +476,9 @@ export class Organization {
       taskId: input.taskId || null,
       assetId: input.assetId || null,
       action: String(input.action || "").toLowerCase(),
-      toolName: input.toolName || null
+      toolName: input.toolName || null,
+      grantId: input.grantId || null,
+      externalActionId: null
     };
     let reason = null;
     const agent = this.list("agents").find((item) => item.id === decision.agentId);
@@ -478,9 +494,18 @@ export class Organization {
       const scoped = (task.accessScope || []).find((item) => item.assetId === asset.id && Array.isArray(item.actions) && item.actions.includes(decision.action));
       if (!scoped) reason = "Action is outside the task capability";
       else {
-        const [entry] = this.effectiveAccess(agent.id, asset.id);
+        decision.externalActionId = task.externalActionId || null;
+        const [entry] = this.effectiveAccess(agent.id, asset.id, { externalActionId: decision.externalActionId });
         const permission = entry.actions.find((item) => item.action === decision.action);
-        if (permission?.effect !== "allowed") reason = permission?.effect === "approval_required" ? "Additional approval is required" : "Access policy denied the action";
+        const persistentAllow = permission?.sources.some((source) => source.type === "policy" && source.effect === "allow");
+        const eligibleGrant = permission?.sources.find((source) => {
+          if (source.type !== "temporary_grant" || (decision.grantId && source.id !== decision.grantId)) return false;
+          const request = this.list("accessRequests").find((item) => item.id === source.id);
+          return request && (!request.externalActionId || request.externalActionId === task.externalActionId);
+        });
+        if (permission?.effect !== "allowed" || (!persistentAllow && !eligibleGrant)) {
+          reason = permission?.effect === "denied" ? "Access policy denied the action" : "Additional approval is required";
+        } else decision.grantId = persistentAllow ? null : eligibleGrant?.id || null;
       }
     }
     if (reason) {
@@ -504,6 +529,7 @@ export class Organization {
   }
 
   planGoal(goalId, { force = false } = {}) {
+    if (this.getGoal(goalId).planningTaskId) throw new Error("This goal uses the CEO planning workflow");
     const goal = this.getGoal(goalId);
     const existing = this.list("tasks").filter((task) => task.goalId === goalId);
     if (existing.length && !force) return this.latestTasksForGoal(goalId);
@@ -596,6 +622,7 @@ export class Organization {
 
   createTask(input = {}) {
     const timestamp = now();
+    if (input.goalId) this.getGoal(input.goalId);
     if (input.assignedAgentId && !this.list("agents").some((agent) => agent.id === input.assignedAgentId)) throw new Error("Assigned employee not found");
     const accessExpiresAt = input.accessExpiresAt || null;
     if (accessExpiresAt && Number.isNaN(new Date(accessExpiresAt).getTime())) throw new Error("accessExpiresAt must be a valid timestamp");
@@ -609,6 +636,16 @@ export class Organization {
     const task = {
       id: id("task"),
       goalId: input.goalId || null,
+      projectId: input.projectId || null,
+      taskKind: input.taskKind || "work",
+      planId: input.planId || null,
+      executionMode: input.executionMode || null,
+      reviewTargetTaskId: input.reviewTargetTaskId || null,
+      reviewRound: Number.isFinite(input.reviewRound) ? input.reviewRound : 0,
+      autoRevisionCount: Number.isFinite(input.autoRevisionCount) ? input.autoRevisionCount : 0,
+      autoRetryCount: Number.isFinite(input.autoRetryCount) ? input.autoRetryCount : 0,
+      founderReviewRequired: Boolean(input.founderReviewRequired),
+      nextAttemptAt: input.nextAttemptAt || null,
       planCycle: Number.isFinite(input.planCycle) ? input.planCycle : 1,
       title: required(input.title, "title"),
       description: input.description?.trim() || "",
@@ -628,6 +665,8 @@ export class Organization {
       context: input.context?.trim() || "",
       routing: input.routing || null,
       nextAction: input.nextAction?.trim() || null,
+      messages: [],
+      executionHistory: [],
       evidence: [],
       attempts: 0,
       output: null,
@@ -638,6 +677,7 @@ export class Organization {
     };
     this.store.update((state) => {
       state.tasks.push(task);
+      this.syncGoalStatus(state, task.goalId);
       return state;
     });
     this.recordEvent("task.created", { taskId: task.id, goalId: task.goalId });
@@ -681,6 +721,7 @@ export class Organization {
   }
 
   createWorkRequest(input = {}, options = {}) {
+    if (input.goalId && this.getGoal(input.goalId).approvedPlanId) throw new Error("This goal has an approved plan. Create independent work or a new goal for a scope change.");
     const instructions = required(input.instructions, "instructions");
     const requestedType = input.workType?.trim() || "auto";
     if (requestedType !== "auto" && !WORK_TYPES[requestedType]) throw new Error("Unknown work type");
@@ -692,11 +733,11 @@ export class Organization {
     let agent = input.assignedAgentId ? agents.find((item) => item.id === input.assignedAgentId) : null;
     if (input.assignedAgentId && !agent) throw new Error("Assigned employee not found");
     if (!agent) {
-      agent = definition.preferredJobTypes.map((jobType) => agents.find((item) => item.jobType === jobType)).find(Boolean)
-        || agents.find((item) => item.capabilities.some((capability) => capability.toLowerCase() === definition.capability))
-        || agents[0];
+      agent = definition.preferredJobTypes.map((jobType) => agents.find((item) => item.jobType === jobType && item.capabilities.includes(definition.capability))).find(Boolean)
+        || agents.find((item) => item.capabilities.includes(definition.capability));
     }
     if (!agent) throw new Error("No employee is available to receive this work request");
+    if (!agent.capabilities.includes(definition.capability)) throw new Error(`Assigned employee requires ${definition.capability} capability`);
 
     const routing = {
       mode: input.assignedAgentId ? "manual" : "automatic",
@@ -747,14 +788,325 @@ export class Organization {
       return task;
     }
 
+    const execution = this.generalTaskBinding(options);
     const task = this.createTask({
       ...base,
-      status: "blocked",
-      blockedReason: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`,
-      nextAction: `Connect an approved ${definition.label.toLowerCase()} executor to begin this work.`
+      ...execution,
+      routing: { ...routing, requiredExecutor: "agent.general", executorStatus: execution.toolName ? "connected" : "unavailable" }
     });
-    this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: null });
+    this.recordEvent("work_request.routed", { taskId: task.id, workType, assignedAgentId: agent.id, executor: task.toolName });
     return task;
+  }
+
+  generalTaskBinding(options = {}) {
+    const asset = this.list("assets").find((item) => item.type === "agent_runtime" && item.tags?.includes("general-executor"));
+    const connected = Boolean(options.generalAvailable && asset && this.tools.list().some((tool) => tool.name === "agent.general"));
+    const nextAction = connected ? null : "Connect the General Agent runtime and its protected service asset, then retry.";
+    return { status: connected ? "pending" : "blocked", toolName: connected ? "agent.general" : null,
+      input: asset ? { assetId: asset.id } : {},
+      accessScope: asset ? [{ assetId: asset.id, actions: ["execute"] }] : [],
+      accessExpiresAt: new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+      nextAction, blockedReason: nextAction };
+  }
+
+  resumeGeneralTask(taskId, input = {}, options = {}) {
+    const task = this.getTask(taskId);
+    if (task.executionMode === "external") throw new Error("External work requires an approved connector; document retry cannot perform it");
+    if (task.workType === "software_development" || task.requestSource !== "founder_work_request") throw new Error("Only general work requests support this action");
+    if (!["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)) throw new Error("Task is not waiting for feedback or retry");
+    const message = typeof input.message === "string" ? input.message.trim() : "";
+    if (["needs_input", "awaiting_review"].includes(task.status) && !message) throw new Error("Feedback message is required");
+    if (message.length > 20_000) throw new Error("Feedback is too long");
+    const binding = this.generalTaskBinding(options);
+    if (!binding.toolName) throw new Error(binding.nextAction);
+    this.workflow?.supersedeBlockedReview(task.id);
+    const previous = { attempt: task.attempts, status: task.status, output: task.output, evidence: task.evidence, error: task.error, endedAt: now() };
+    const updated = this.updateTask(task.id, { ...binding, executor: binding.toolName, error: null, evidence: [],
+      messages: [...(task.messages || []), ...(message ? [{ role: "founder", content: message, createdAt: now() }] : [])],
+      executionHistory: [...(task.executionHistory || []), previous],
+      routing: { ...task.routing, requiredExecutor: "agent.general", executorStatus: "connected" } });
+    this.recordEvent("task.feedback", { taskId, hasMessage: Boolean(message) });
+    return updated;
+  }
+
+  acceptTask(taskId) {
+    const task = this.getTask(taskId);
+    if (task.taskKind === "goal_planning") throw new Error("Use the goal plan approval action");
+    const codeDelivery = task.toolName === "code.codex" && task.output;
+    const externalDelivery = task.executionMode === "external" && this.list("externalActions").some((action) => action.id === task.externalActionId && action.status === "completed");
+    if (codeDelivery && (!task.output.worktreeId || !task.input?.assetId)) throw new Error("Code delivery is missing its isolated worktree evidence");
+    if (task.status !== "awaiting_review" || (!codeDelivery && !externalDelivery && (task.output?.outcome !== "delivered" || !task.output.artifacts?.length)) || !task.evidence?.length) {
+      throw new Error("Task requires a delivered artifact before acceptance");
+    }
+    this.workflow?.supersedeBlockedReview(task.id);
+    const updated = this.updateTask(taskId, { status: "completed", nextAction: null, acceptedAt: now() });
+    this.recordEvent("task.accepted", { taskId, decidedBy: "Founder", evidenceCount: task.evidence.length });
+    if (codeDelivery) this.requestCodeIntegration(taskId);
+    if (task.planId) this.workflow?.queueFinalReport(task.goalId);
+    return updated;
+  }
+
+  requestCodeIntegration(taskId) {
+    const task = this.getTask(taskId);
+    if (task.toolName !== "code.codex" || task.status !== "completed" || !task.output?.worktreeId || !task.input?.assetId) {
+      throw new Error("Only an accepted code delivery can request integration");
+    }
+    const current = this.list("integrationRequests").find((item) => item.taskId === taskId && ["pending", "executing", "completed"].includes(item.status));
+    if (current) return current;
+    const request = { id: id("integration"), taskId, goalId: task.goalId, projectId: task.projectId, assetId: task.input.assetId,
+      requestedByAgentId: task.assignedAgentId, targetBranch: "codex/integration", changedFiles: task.output.changedFiles || [],
+      status: "pending", risk: "high", createdAt: now(), updatedAt: now(), result: null, error: null };
+    this.store.update((state) => {
+      state.integrationRequests.push(request);
+      const storedTask = state.tasks.find((item) => item.id === taskId);
+      Object.assign(storedTask, { integrationStatus: "awaiting_founder_approval", integrationRequestId: request.id,
+        nextAction: "Founder approval is required before applying this delivery to codex/integration.", updatedAt: now() });
+      state.events.push({ id: id("event"), type: "code.integration_requested", createdAt: now(), payload: { requestId: request.id, taskId, targetBranch: request.targetBranch } });
+      return state;
+    });
+    return request;
+  }
+
+  async decideCodeIntegration(requestId, input = {}, executor) {
+    const request = this.list("integrationRequests").find((item) => item.id === requestId);
+    if (!request) throw new Error("Integration request not found");
+    if (request.status !== "pending") throw new Error("Integration request is already decided");
+    if (!executor) throw new Error("Code integration executor is unavailable");
+    const decision = input.decision;
+    const reason = required(input.reason, "decision reason");
+    if (!["approved", "rejected"].includes(decision)) throw new Error("Decision must be approved or rejected");
+    if (decision === "rejected") {
+      this.store.update((state) => {
+        const current = state.integrationRequests.find((item) => item.id === requestId);
+        Object.assign(current, { status: "rejected", decidedBy: "Founder", decisionReason: reason, updatedAt: now() });
+        const task = state.tasks.find((item) => item.id === request.taskId);
+        Object.assign(task, { integrationStatus: "rejected", nextAction: "The code delivery remains isolated. Revise it or create a new integration request.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "code.integration_rejected", createdAt: now(), payload: { requestId, taskId: request.taskId, reason } });
+        return state;
+      });
+      return this.list("integrationRequests").find((item) => item.id === requestId);
+    }
+    this.store.update((state) => {
+      const current = state.integrationRequests.find((item) => item.id === requestId);
+      Object.assign(current, { status: "executing", decidedBy: "Founder", decisionReason: reason, updatedAt: now() });
+      return state;
+    });
+    const task = this.getTask(request.taskId);
+    const asset = this.list("assets").find((item) => item.id === request.assetId);
+    try {
+      const result = await executor.execute({ task, asset });
+      this.store.update((state) => {
+        const current = state.integrationRequests.find((item) => item.id === requestId);
+        Object.assign(current, { status: "completed", result, updatedAt: now() });
+        const storedTask = state.tasks.find((item) => item.id === request.taskId);
+        Object.assign(storedTask, { integrationStatus: "integrated", integration: result, nextAction: null, updatedAt: now() });
+        state.events.push({ id: id("event"), type: "code.integrated", createdAt: now(), payload: { requestId, taskId: request.taskId,
+          branch: result.branch, integrationCommit: result.integrationCommit, testStatus: result.test.status } });
+        return state;
+      });
+      if (task.planId) this.workflow?.queueFinalReport(task.goalId);
+      return this.list("integrationRequests").find((item) => item.id === requestId);
+    } catch (error) {
+      this.store.update((state) => {
+        const current = state.integrationRequests.find((item) => item.id === requestId);
+        Object.assign(current, { status: "failed", error: error.message, updatedAt: now() });
+        const storedTask = state.tasks.find((item) => item.id === request.taskId);
+        Object.assign(storedTask, { integrationStatus: "failed", nextAction: "Integration failed safely. Review the conflict or test error before retrying.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "code.integration_failed", createdAt: now(), payload: { requestId, taskId: request.taskId, error: error.message } });
+        return state;
+      });
+      throw error;
+    }
+  }
+
+  requestExternalAction(taskId, input = {}, connectors) {
+    const task = this.getTask(taskId);
+    if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) throw new Error("Task is not waiting for an external connector");
+    if (!task.assignedAgentId) throw new Error("External task requires an assigned employee");
+    if (task.dependsOn.some((dependencyId) => {
+      const dependency = this.getTask(dependencyId);
+      return dependency.status !== "completed" || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
+    })) throw new Error("Task dependencies must be accepted and code dependencies integrated before preparing an external action");
+    const connectorType = required(input.connectorType, "connector type");
+    const connector = connectors.get(connectorType);
+    const asset = this.list("assets").find((item) => item.id === input.assetId && item.type === "external_connector" && item.connectorType === connectorType);
+    if (!asset) throw new Error("Matching connector asset not found");
+    const operation = { web_research: "read", email: "send", crm: "create", publishing: "publish" }[connectorType];
+    const [entry] = this.effectiveAccess(task.assignedAgentId, asset.id);
+    const permission = entry.actions.find((item) => item.action === operation);
+    if (!permission || ["denied", "not_granted"].includes(permission.effect)) throw new Error("Employee policy does not permit requesting this connector action");
+    const preview = connector.preview(input.payload || {});
+    const existing = this.list("externalActions").find((item) => item.taskId === taskId && ["pending", "executing", "completed", "uncertain"].includes(item.status));
+    if (existing) return existing;
+    const action = { id: id("action"), taskId, goalId: task.goalId, projectId: task.projectId, agentId: task.assignedAgentId,
+      assetId: asset.id, connectorType, operation, payload: input.payload || {}, preview, risk: connectorType === "web_research" ? "medium" : "high",
+      status: "pending", createdAt: now(), updatedAt: now(), result: null, error: null };
+    this.store.update((state) => {
+      state.externalActions.push(action);
+      const storedTask = state.tasks.find((item) => item.id === taskId);
+      Object.assign(storedTask, { externalActionId: action.id, nextAction: "Review the exact external action in Approvals.", updatedAt: now() });
+      state.events.push({ id: id("event"), type: "external.action_requested", createdAt: now(), payload: { actionId: action.id, taskId,
+        connectorType, operation, assetId: asset.id } });
+      return state;
+    });
+    return action;
+  }
+
+  async decideExternalAction(actionId, input = {}, connectors) {
+    const action = this.list("externalActions").find((item) => item.id === actionId);
+    if (!action) throw new Error("External action not found");
+    if (action.status !== "pending") throw new Error("External action is already decided");
+    const decision = input.decision;
+    const reason = required(input.reason, "decision reason");
+    if (!["approved", "rejected"].includes(decision)) throw new Error("Decision must be approved or rejected");
+    if (decision === "rejected") {
+      this.store.update((state) => {
+        const current = state.externalActions.find((item) => item.id === actionId);
+        Object.assign(current, { status: "rejected", decidedBy: "Founder", decisionReason: reason, decidedAt: now(), updatedAt: now() });
+        const task = state.tasks.find((item) => item.id === action.taskId);
+        Object.assign(task, { status: "blocked", nextAction: "The proposed external action was rejected. Revise the task or action payload.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "external.action_rejected", createdAt: now(), payload: { actionId, taskId: action.taskId, reason } });
+        return state;
+      });
+      return this.list("externalActions").find((item) => item.id === actionId);
+    }
+    const connector = connectors.get(action.connectorType);
+    if (!connector.status().configured) throw new Error(`${action.connectorType} connector is not configured`);
+    const grantId = id("access");
+    this.store.update((state) => {
+      const current = state.externalActions.find((item) => item.id === actionId);
+      Object.assign(current, { status: "executing", decidedBy: "Founder", decisionReason: reason, decidedAt: now(), updatedAt: now() });
+      state.accessRequests.push({ id: grantId, requesterAgentId: action.agentId, assetId: action.assetId, action: action.operation,
+        reason: `Exact external action ${action.id}: ${reason}`, duration: "one action", grantType: "once", durationMinutes: 60,
+        risk: action.risk, status: "approved", decisionReason: reason, decidedBy: "Founder", decidedAt: now(), expiresAt: null,
+        usesRemaining: 1, consumedAt: null, externalActionId: action.id, createdAt: now(), updatedAt: now() });
+      const task = state.tasks.find((item) => item.id === action.taskId);
+      Object.assign(task, { status: "running", attempts: (task.attempts || 0) + 1, toolName: `connector.${action.connectorType}`,
+        executor: `connector.${action.connectorType}`, accessScope: [{ assetId: action.assetId, actions: [action.operation] }],
+        accessExpiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), error: null, blockedReason: null, updatedAt: now() });
+      state.events.push({ id: id("event"), type: "external.action_approved", createdAt: now(), payload: { actionId, taskId: action.taskId, grantId } });
+      this.syncGoalStatus(state, task.goalId);
+      return state;
+    });
+    const task = this.getTask(action.taskId);
+    let invocationStarted = false;
+    try {
+      const authorization = this.authorizeToolCall({ agentId: action.agentId, taskId: task.id, assetId: action.assetId,
+        action: action.operation, toolName: `connector.${action.connectorType}`, grantId });
+      invocationStarted = true;
+      const result = await connector.execute(action.payload, { idempotencyKey: action.id });
+      this.completeAuthorizedToolCall(authorization);
+      const artifacts = (result.artifacts || []).map((artifact) => ({ ...artifact, bytes: Buffer.byteLength(artifact.content, "utf8"),
+        sha256: crypto.createHash("sha256").update(artifact.content).digest("hex") }));
+      const evidence = [{ id: id("evidence"), type: "external_receipt", summary: result.summary,
+        details: { actionId, connectorType: action.connectorType, receiptId: result.receiptId, url: result.url || null, sources: result.sources || [] }, createdAt: now() }];
+      this.store.update((state) => {
+        const current = state.externalActions.find((item) => item.id === actionId);
+        Object.assign(current, { status: "completed", result: { ...result, artifacts }, updatedAt: now() });
+        const storedTask = state.tasks.find((item) => item.id === action.taskId);
+        Object.assign(storedTask, { status: "awaiting_review", output: { outcome: "delivered", summary: result.summary,
+          questions: [], limitations: [], artifacts, externalReceipt: result.receiptId }, evidence, error: null,
+          nextAction: "Review the external receipt and accept the task delivery.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "external.action_completed", createdAt: now(), payload: { actionId,
+          taskId: action.taskId, connectorType: action.connectorType, receiptId: result.receiptId } });
+        this.syncGoalStatus(state, storedTask.goalId);
+        return state;
+      });
+      return this.list("externalActions").find((item) => item.id === actionId);
+    } catch (error) {
+      const uncertain = invocationStarted && action.connectorType !== "web_research";
+      this.store.update((state) => {
+        const current = state.externalActions.find((item) => item.id === actionId);
+        Object.assign(current, { status: uncertain ? "uncertain" : "failed", error: error.message, updatedAt: now() });
+        const storedTask = state.tasks.find((item) => item.id === action.taskId);
+        Object.assign(storedTask, { status: uncertain ? "awaiting_review" : "failed", error: error.message,
+          nextAction: uncertain ? "The external outcome is uncertain. Verify the destination before any retry." : "The read-only research action failed and may be revised.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: uncertain ? "external.action_uncertain" : "external.action_failed", createdAt: now(),
+          payload: { actionId, taskId: action.taskId, connectorType: action.connectorType, error: error.message } });
+        this.syncGoalStatus(state, storedTask.goalId);
+        return state;
+      });
+      throw error;
+    }
+  }
+
+  recoverInterruptedExternalActions() {
+    this.store.update((state) => {
+      for (const action of state.externalActions.filter((item) => item.status === "executing")) {
+        Object.assign(action, { status: "uncertain", error: "The service restarted before the external receipt was persisted.", updatedAt: now() });
+        const task = state.tasks.find((item) => item.id === action.taskId);
+        if (task) Object.assign(task, { status: "awaiting_review", error: action.error,
+          nextAction: "Verify the external destination before deciding whether to retry.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "external.action_uncertain", createdAt: now(), payload: { actionId: action.id,
+          taskId: action.taskId, reason: "restart_before_receipt" } });
+      }
+      return state;
+    });
+  }
+
+  recoverInterruptedTasks() {
+    for (const task of this.list("tasks").filter((item) => item.status === "running")) {
+      this.updateTask(task.id, { status: "pending", leaseId: null, leaseExpiresAt: null,
+        error: "The previous worker stopped before recording a result. The durable queue will retry this idempotent work order." });
+      this.recordEvent("task.lease_recovered", { taskId: task.id });
+    }
+  }
+
+  recoverExpiredLeases() {
+    let recovered = 0;
+    this.store.update((state) => {
+      const currentTime = Date.now();
+      for (const task of state.tasks.filter((item) => item.status === "running" && item.leaseExpiresAt
+        && new Date(item.leaseExpiresAt).getTime() <= currentTime)) {
+        Object.assign(task, { status: "pending", leaseId: null, leaseExpiresAt: null,
+          error: "The worker lease expired before a result was recorded. The task is safe to retry.", updatedAt: now() });
+        state.events.push({ id: id("event"), type: "task.lease_expired", createdAt: now(), payload: { taskId: task.id } });
+        this.syncGoalStatus(state, task.goalId);
+        recovered += 1;
+      }
+      return state;
+    });
+    return recovered;
+  }
+
+  claimTask(taskId, leaseDurationMs = 30 * 60_000) {
+    let claimed = null;
+    let claimError = null;
+    this.store.update((state) => {
+      const task = state.tasks.find((item) => item.id === taskId);
+      if (!task) { claimError = "Task not found"; return state; }
+      if (!["pending", "blocked", "failed"].includes(task.status)) { claimError = "Task is already running or requires review before another execution"; return state; }
+      const currentTime = Date.now();
+      const running = state.tasks.filter((item) => item.status === "running" && (!item.leaseExpiresAt || new Date(item.leaseExpiresAt).getTime() > currentTime));
+      if (running.length >= 2 || running.some((item) => task.assignedAgentId && item.assignedAgentId === task.assignedAgentId)) {
+        claimError = "Execution capacity is busy; wait for the current work to finish";
+        return state;
+      }
+      const blockedDependency = task.dependsOn.find((dependencyId) => {
+        const dependency = state.tasks.find((item) => item.id === dependencyId);
+        return !dependency || dependency.status !== "completed"
+          || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
+      });
+      if (blockedDependency) {
+        Object.assign(task, { status: "blocked", blockedReason: `Dependency ${blockedDependency} is not completed.`, updatedAt: now() });
+        claimError = "Task dependencies are not completed";
+        return state;
+      }
+      if (!task.toolName) {
+        Object.assign(task, { status: "blocked", blockedReason: "No executor is configured for this task.", updatedAt: now() });
+        claimError = "Task has no executor configured";
+        return state;
+      }
+      const leaseId = id("lease");
+      Object.assign(task, { status: "running", attempts: (task.attempts || 0) + 1, executor: task.toolName,
+        error: null, blockedReason: null, leaseId, leaseExpiresAt: new Date(currentTime + leaseDurationMs).toISOString(), updatedAt: now() });
+      claimed = structuredClone(task);
+      state.events.push({ id: id("event"), type: "task.claimed", createdAt: now(), payload: { taskId, leaseId, leaseExpiresAt: task.leaseExpiresAt } });
+      this.syncGoalStatus(state, task.goalId);
+      return state;
+    });
+    if (claimError) throw new Error(claimError);
+    return claimed;
   }
 
   searchMemories(query = "") {
@@ -788,12 +1140,27 @@ export class Organization {
   syncGoalStatus(state, goalId) {
     const goal = state.goals.find((item) => item.id === goalId);
     if (!goal) return;
+    if (goal.planningTaskId) {
+      const planning = state.tasks.find((t) => t.id === goal.planningTaskId);
+      const work = state.tasks.filter((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.taskKind === "work");
+      const report = goal.finalReportTaskId ? state.tasks.find((t) => t.id === goal.finalReportTaskId) : null;
+      const deliveryComplete = work.length > 0 && work.every((t) => t.status === "completed"
+        && (t.toolName !== "code.codex" || t.integrationStatus === "integrated"));
+      goal.executionStatus = !goal.approvedPlanId ? planning?.status === "awaiting_review" ? "awaiting_plan_approval" : planning?.status === "needs_input" ? "needs_input" : ["pending", "running"].includes(planning?.status) ? "planning" : "blocked"
+        : deliveryComplete ? !goal.autonomyPolicy ? "delivered" : report?.status === "completed" ? "delivered"
+          : ["blocked", "failed"].includes(report?.status) || goal.finalReportStatus === "blocked" ? "blocked" : "reporting"
+          : work.some((t) => ["blocked", "failed"].includes(t.status)) ? "blocked"
+            : work.some((t) => ["awaiting_review", "awaiting_quality_review"].includes(t.status)) ? "awaiting_review" : "in_progress";
+      goal.updatedAt = now();
+      return;
+    }
     const tasks = state.tasks.filter((task) => task.goalId === goalId);
     const latestCycle = tasks.length ? Math.max(...tasks.map((task) => task.planCycle || 1)) : 0;
     const latest = tasks.filter((task) => (task.planCycle || 1) === latestCycle);
     if (!latest.length) goal.executionStatus = "not_started";
     else if (latest.some((task) => ["blocked", "failed"].includes(task.status))) goal.executionStatus = "blocked";
-    else if (latest.every((task) => task.status === "completed")) goal.executionStatus = "awaiting_review";
+    else if (latest.some((task) => task.status === "needs_input")) goal.executionStatus = "blocked";
+    else if (latest.every((task) => ["completed", "awaiting_review"].includes(task.status))) goal.executionStatus = "awaiting_review";
     else goal.executionStatus = "in_progress";
     goal.updatedAt = now();
   }
@@ -812,6 +1179,7 @@ export class Organization {
   }
 
   summarizeGoal(goalId) {
+    if (this.workflow && this.getGoal(goalId).planningTaskId) return this.workflow.summarizeGoal(goalId);
     const goal = this.getGoal(goalId);
     const tasks = this.latestTasksForGoal(goalId);
     const counts = taskCounts(tasks);
@@ -836,45 +1204,48 @@ export class Organization {
     };
   }
 
-  async executeTask(taskId) {
-    const task = this.getTask(taskId);
-    const state = this.store.read();
-    const blockedDependency = task.dependsOn.find((dependencyId) => {
-      const dependency = state.tasks.find((item) => item.id === dependencyId);
-      return !dependency || dependency.status !== "completed";
-    });
-    if (blockedDependency) {
-      this.updateTask(taskId, {
-        status: "blocked",
-        blockedReason: `Dependency ${blockedDependency} is not completed.`
-      });
-      throw new Error("Task dependencies are not completed");
-    }
-    if (!task.toolName) {
-      this.updateTask(taskId, {
-        status: "blocked",
-        blockedReason: "No executor is configured for this task."
-      });
-      throw new Error("Task has no executor configured");
-    }
-
-    this.updateTask(taskId, {
-      status: "running",
-      attempts: (task.attempts || 0) + 1,
-      executor: task.toolName,
-      error: null,
-      blockedReason: null
-    });
+  async executeTask(taskId, options = {}) {
+    const task = options.leaseId ? this.getTask(taskId) : this.claimTask(taskId);
+    if (options.leaseId && (task.status !== "running" || task.leaseId !== options.leaseId)) throw new Error("Task lease is stale");
+    const leaseId = options.leaseId || task.leaseId;
     try {
       const agent = this.list("agents").find((item) => item.id === task.assignedAgentId) || null;
       const output = await this.tools.execute(task.toolName, task.input, { task: this.getTask(task.id), agent, organization: this });
       const evidence = Array.isArray(output?.evidence) ? output.evidence : [];
       if (!evidence.length) throw new Error("Executor returned no evidence");
-      const result = this.updateTask(taskId, { status: "completed", output, evidence, error: null });
-      this.recordEvent("task.completed", { taskId, evidenceCount: evidence.length });
+      const status = ["agent.general", "goal.plan"].includes(task.toolName)
+        ? { delivered: task.taskKind === "goal_report" ? "completed" : task.toolName === "agent.general" && this.workflow?.shouldAutoReview(task) ? "awaiting_quality_review" : "awaiting_review", needs_input: "needs_input", blocked: "blocked" }[output.outcome]
+        : task.toolName === "code.codex" ? "awaiting_review" : "completed";
+      if (!status) throw new Error("Executor returned an unknown outcome");
+      const leasedTask = this.getTask(taskId);
+      if (leasedTask.status !== "running" || leasedTask.leaseId !== leaseId) {
+        const error = new Error("Task lease is stale; executor output was discarded");
+        error.code = "STALE_TASK_LEASE";
+        throw error;
+      }
+      const nextAction = status === "awaiting_quality_review" ? "An independent quality review is queued."
+        : status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
+        : status === "needs_input" ? "Answer the employee's questions to continue." : null;
+      const result = this.updateTask(taskId, { status, output, evidence, error: null, nextAction, nextAttemptAt: null, autoRetryCount: 0,
+        leaseId: null, leaseExpiresAt: null,
+        blockedReason: status === "blocked" ? output.limitations.join(" ") : null });
+      this.recordEvent(`task.${status}`, { taskId, evidenceCount: evidence.length });
+      if (status === "awaiting_quality_review") this.workflow.queueQualityReview(result);
+      if (task.toolName === "delivery.review") this.workflow.applyQualityReview(result);
+      if (task.taskKind === "goal_report") this.store.update((state) => {
+        const goal = state.goals.find((g) => g.id === task.goalId);
+        if (goal) goal.finalReportStatus = status;
+        return state;
+      });
       return result;
     } catch (error) {
-      const failed = this.updateTask(taskId, { status: "failed", error: error.message });
+      if (error.code === "STALE_TASK_LEASE") throw error;
+      if (error.code === "AUTONOMY_BUDGET_EXHAUSTED") throw error;
+      const current = this.getTask(taskId);
+      const retry = this.workflow?.handleExecutionFailure(current, error);
+      if (retry) return retry;
+      const failed = this.updateTask(taskId, { status: "failed", error: error.message, founderReviewRequired: Boolean(task.planId), leaseId: null, leaseExpiresAt: null });
+      this.workflow?.handlePermanentFailure(failed, error);
       this.recordEvent("task.failed", { taskId, error: error.message });
       throw Object.assign(error, { task: failed });
     }
@@ -901,18 +1272,24 @@ export class Scheduler {
   }
 
   async tick() {
+    this.organization.recoverExpiredLeases();
     const tasks = this.organization.list("tasks")
-      .filter((task) => task.status === "pending")
+      .filter((task) => task.status === "pending" && (!task.nextAttemptAt || new Date(task.nextAttemptAt).getTime() <= Date.now()))
       .sort((a, b) => a.priority - b.priority);
     for (const task of tasks) {
+      if (this.running.size >= 2) break;
       if (this.running.has(task.id)) continue;
+      if (this.organization.list("tasks").some((item) => item.status === "running" && item.assignedAgentId && item.assignedAgentId === task.assignedAgentId)) continue;
       const state = this.organization.list("tasks");
       const ready = task.dependsOn.every((dependencyId) =>
-        state.some((dependency) => dependency.id === dependencyId && dependency.status === "completed")
+        state.some((dependency) => dependency.id === dependencyId && dependency.status === "completed"
+          && (dependency.toolName !== "code.codex" || dependency.integrationStatus === "integrated"))
       );
       if (!ready) continue;
+      let claimed;
+      try { claimed = this.organization.claimTask(task.id); } catch { continue; }
       this.running.add(task.id);
-      this.organization.executeTask(task.id)
+      this.organization.executeTask(task.id, { leaseId: claimed.leaseId })
         .catch(() => {})
         .finally(() => this.running.delete(task.id));
     }

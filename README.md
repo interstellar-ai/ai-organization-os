@@ -3,7 +3,7 @@
 This is a runnable first version of an AI Organization OS. It validates the smallest goal-driven organization loop:
 
 ```text
-Founder intent → work classification → employee routing → approved executor → evidence → review
+Founder goal → CEO proposal → Founder approval → employee execution → independent review and bounded revision → CEO report
 ```
 
 ![AI Organization OS Founder Command Center](docs/images/founder-command-center.png)
@@ -18,16 +18,20 @@ Product documentation, project notes, operating rules, canonical addresses, and 
 npm start
 ```
 
-Open <http://localhost:3333>. On first launch, the server creates an example AI organization, classified assets, access policies, and one safety-policy memory. Runtime data is stored in `data/state.json`.
+Open <http://localhost:3333>. On first launch, the server creates an example AI organization, classified assets, access policies, and one safety-policy memory. Runtime data is stored transactionally in the ignored `data/organization.sqlite` database. An existing `data/state.json` file is imported once; set `AI_ORG_STORE=json` only for legacy development compatibility.
 
-To enable Codex-powered coding tasks, install the [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) and sign in with ChatGPT:
+To enable model-backed employee work, install the [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) and sign in with ChatGPT before starting the server:
 
 ```bash
 npm install -g @openai/codex
 codex login
 ```
 
-The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes every request to an appropriate employee. Software development can continue into protected Codex execution; other work types remain honestly `blocked` until their approved executors are connected.
+The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes requests to an employee. Non-software employees use Codex to produce actual text documents, ask clarifying questions, or report a blocker. Software work uses the separate protected coding executor. No separately billed Responses API integration is required; Codex account usage limits still apply.
+
+Start on **Home** with an outcome and constraints. The AI CEO proposes projects, employee assignments, deliverables, and dependencies, or asks clarifying questions. Review the proposal in **Goals** and choose **Confirm plan and start work**. Only then does the system create real **Projects** and queue employee tasks. Simple goals may use direct tasks without a project.
+
+Plan confirmation activates controlled autonomy for the displayed scope and budget. Internal document tasks are independently reviewed and can be revised automatically up to twice. Passing work unlocks accepted dependency handoffs; exceptions return to the Founder. Code deliveries require Founder acceptance and a second exact integration approval before they can enter the tested `codex/integration` branch. External work requires a configured connector and exact-payload approval. After all required work is accepted—and code is integrated—the AI CEO generates a final evidence and outcome report. **New work request** remains available for standalone work. See [Goal planning](docs/GOAL_PLANNING.md), [Controlled autonomy](docs/CONTROLLED_AUTONOMY.md), [Code integration](docs/CODE_INTEGRATION.md), [External connectors](docs/EXTERNAL_CONNECTORS.md), and [Durable runtime](docs/DURABLE_RUNTIME.md).
 
 Run the test suite with:
 
@@ -48,11 +52,18 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Job templates | `GET/POST /api/job-templates` |
 | Preview a template-based hire | `POST /api/job-templates/preview` |
 | Goal input | `GET/POST /api/goals` |
-| Generate a plan | `POST /api/goals/:id/plan` |
-| Replan a goal | `POST /api/goals/:id/replan` |
+| Request CEO planning or clarification | `POST /api/goals/:id/plan` |
+| Revise an unapproved proposal | `POST /api/goals/:id/replan` |
+| Approve the current proposal and create work | `POST /api/goals/:id/approve-plan` |
+| Approve a bounded model-run extension | `POST /api/goals/:id/extend-budget` |
+| Projects, progress, and associated tasks | `GET /api/projects` |
+| Bind a blocked plan code task to an explicit codebase | `POST /api/tasks/:id/configure-code` |
 | Goal progress and evidence | `GET /api/goals/:id/summary` |
 | Task management/execution | `GET/POST /api/tasks`, `POST /api/tasks/:id/run` |
 | Classify and route a Founder work request | `POST /api/work-requests` |
+| Reply, request revision, or retry general work | `POST /api/tasks/:id/feedback` |
+| Accept a standalone, code, or escalated delivery | `POST /api/tasks/:id/accept` |
+| Download a current artifact | `GET /api/tasks/:id/artifacts/:index` |
 | Codex runtime status | `GET /api/codex/status` |
 | Create a protected coding task | `POST /api/coding/tasks` |
 | Basic memory | `GET /api/memories?q=...`, `POST /api/memories` |
@@ -66,31 +77,42 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Access requests | `GET/POST /api/access-requests` |
 | Approve or reject access | `POST /api/access-requests/:id/decision` |
 | Consume authorized access | `POST /api/access/consume` |
+| Integration requests | `GET /api/integration-requests`, `POST /api/tasks/:id/request-integration` |
+| Approve or reject isolated code integration | `POST /api/integration-requests/:id/decision` |
+| Connector readiness | `GET /api/connectors` |
+| Prepare an exact external action | `POST /api/tasks/:id/configure-external` |
+| External action history | `GET /api/external-actions` |
+| Approve or reject an external action | `POST /api/external-actions/:id/decision` |
 
-The current tool set includes `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Every planned task must produce evidence before it can become `completed`.
+The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, `agent.general`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Managed model tools run only through assigned running tasks, not the generic tool endpoint. Every completed task requires evidence.
 
 ## Current boundaries
 
-- The scheduler checks every second for pending tasks whose dependencies are complete, then executes them by priority.
-- Goal workflows use local deterministic tools that produce structured outputs and evidence. Founder work requests without a connected executor remain `blocked` instead of being falsely completed.
-- Plan generation currently uses a fixed five-stage template and does not call an LLM.
-- JSON storage is suitable for a single-machine MVP, but not for multi-process or high-concurrency workloads.
-- Access requests and local approval decisions are implemented, but high-impact external actions do not yet have connectors or an execution approval gate.
-- One-use grants are consumed only when an executor calls the controlled access endpoint. Time-bound grants expire automatically, but no external connector uses them yet.
-- Job templates provide role inheritance. Project-scoped access remains deferred until the separate Project domain is implemented.
+- The scheduler checks every second for pending tasks whose dependencies are complete, then atomically claims them with persisted leases. It runs by priority, with at most two active tasks and one per employee. Controlled plans retry transient provider failures up to three attempts. Interrupted or expired idempotent work is safely requeued.
+- New goal plans use real Codex reasoning and host-validated project/task graphs. Up to five projects and sixteen tasks can be proposed. Clarification and plan revision do not launch delivery work. Approval is atomic and repeat-safe.
+- Legacy fixed five-stage workflows are preserved as historical data; new Home and goal-plan requests use the CEO planner. Approved plans cannot yet be edited in place.
+- General execution returns Markdown, text, CSV, or JSON from supplied context. It does not retrieve private assets or memories automatically or directly hold external credentials. Live research, email, CRM creation and webhook publishing run through separate host-controlled connectors after an exact action preview and Founder approval. Image generation remains unconnected.
+- General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct. Approved plan documents require independent criterion review and may auto-revise twice; standalone and escalated work requires Founder review. Feedback preserves prior versions.
+- Controlled plans enforce a displayed model-invocation budget and automatically generate a final CEO report. Delivery completion remains separate from verified business outcomes.
+- SQLite WAL storage provides transactional, crash-durable local state and imports legacy JSON. Atomic leased claims prevent two local processes from claiming the same task. It is a strong single-node foundation, not a horizontally scaled multi-tenant database or broker.
+- Live research supports explicit public HTTPS sources and optional Brave Search. Email uses Resend, CRM uses HubSpot, and publishing uses a configured HTTPS webhook. Provider credentials remain server-side environment variables.
+- Every external action creates a one-use scoped grant and audit trail. Side-effect failures after invocation are marked `uncertain`; the system requires destination verification instead of automatic retry.
+- Job templates provide role inheritance. Projects now own delivery tasks, but general project-scoped asset policies remain deferred. Plan confirmation authorizes only the displayed assignments and accepted dependency-artifact handoffs within that goal.
 - The Employees page can hire an employee from a job template after previewing inherited responsibilities, capabilities, matching policies, and default access. Role defaults are copied at hire time; template editing and employee overrides are not yet exposed.
 - Protected tools require employee identity, an active assigned task, a non-expired task capability, and an allowed access-policy decision. The authorized asset catalog hides assets outside the employee's allowed or requestable policy scope.
 - `code.codex` requires `read`, `modify`, and `execute` permission on the assigned source-code asset before Codex starts. Each run uses a detached local Git worktree, the `workspace-write` Codex sandbox, a sanitized child-process environment, bounded output, and a timeout.
-- Codex coding tasks cannot push, merge or deploy through this executor. The current version records changed files and execution evidence, but does not yet provide a Founder review-and-apply workflow or automatic worktree cleanup.
-- The current HTTP API is still a trusted single-Founder development surface without authentication. A production deployment must derive employee and task identity from signed runtime credentials rather than request fields.
+- Code tasks require explicit codebase selection and existing permissions. Accepted deliveries create a second approval request. Approval scans changed files for credential patterns, commits the reviewed worktree, cherry-picks it into `codex/integration`, and runs an allowlisted test command. It cannot push, merge `main` or deploy. Downstream code waits for successful integration and starts from that branch.
+- The HTTP server binds to loopback and checks browser POST origins and JSON content types. It is still a trusted single-Founder development surface without authentication, not a production security boundary. A production deployment must derive identity from signed runtime credentials and enforce process, network, and tenant isolation.
 
 ## Iteration roadmap
 
 1. **v0.4: Access governance foundation** — Persistent job templates, policy impact preview, approval-required rules, temporary grants, authorized asset discovery, task capabilities, and enforced protected-tool checks.
 2. **v0.5: Codex-first coding executor** — Add protected Codex work orders, isolated Git worktrees, runtime health, evidence, and a Founder-facing assignment form.
-3. **v0.6: Model decision and reliable execution layer** — Add an LLM-backed Goal Planner, Agent Router, structured-output validation, SQLite/Postgres, queues, idempotency, cancellation, retries, and execution approval gates.
-4. **v0.7: Connector layer** — Add browser, GitHub, email, CRM, and cloud-service connectors with scoped permissions.
-5. **v0.8: Organizational learning layer** — Add task evaluation, tiered long-term memory, knowledge retrieval, agent performance, and cost monitoring.
-6. **v1.0: Multi-tenant edition** — Add user/team permissions, secret management, isolated execution environments, budget controls, compliance, and observability.
+3. **v0.6: General document execution** — Codex-backed employees, validated deliverables, clarification, revision history, human acceptance, bounded concurrency, and restart recovery. An LLM-backed planner/router, database-backed queue, cancellation, budgets, and independent review remain next steps.
+4. **v0.7: Goal-to-project orchestration** — CEO clarification, validated proposals, explicit approval, atomic project/task creation, assigned employees, accepted dependency handoffs, and aggregate delivery progress. Scoped external connectors remain future work.
+5. **v0.8: Controlled autonomy** — Add independent document review, automatic revision, transient retry, model-run budgets, escalation, and final CEO reporting.
+6. **v0.9: Durable controlled execution** — Add transactional SQLite state, leased claims and recovery, approved code integration, public-web research, and scoped email, CRM and publishing connectors.
+7. **v0.10: Organizational learning layer** — Add tiered long-term memory, permission-filtered retrieval, reviewer and employee performance, and cost monitoring.
+8. **v1.0: Multi-tenant edition** — Add PostgreSQL, distributed workers, user/team authentication, managed secrets, isolated execution environments, currency budgets, compliance, and observability.
 
-The confirmed first scenario is an AI Software Product Studio. The next implementation step is to replace the fixed five-stage template with its product, project, design, engineering, test, review, and Founder-acceptance workflow.
+The confirmed first scenario is an AI Software Product Studio. Document collaboration runs through approved plans and controlled quality gates; code and external actions now have separate approval-bound execution paths. Business-outcome verification remains distinct: a 100% delivery indicator is not proof that a business goal has been achieved.
