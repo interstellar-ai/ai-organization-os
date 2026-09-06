@@ -11,7 +11,7 @@ function limitedText(value, maximum = 2_000) {
   return text.length > maximum ? `${text.slice(0, maximum)}…` : text;
 }
 
-function safeErrorMessage(value, maximum = 1_000) {
+export function safeErrorMessage(value, maximum = 1_000) {
   let text = String(value || "Execution failed");
   for (const localPath of [process.env.HOME, process.env.CODEX_HOME].filter(Boolean)) {
     text = text.replaceAll(localPath, "[local path]");
@@ -184,12 +184,12 @@ export class CodexExecutor {
     return result.stdout.replace(/\s+$/, "");
   }
 
-  async prepareWorktree(sourceRoot, taskId) {
+  async prepareWorktree(sourceRoot, taskId, baseRef = "HEAD") {
     const repositoryRoot = await this.git(sourceRoot, ["rev-parse", "--show-toplevel"]);
     const destination = path.join(this.runtimeRoot, workspaceKey(repositoryRoot), taskId);
     if (!fs.existsSync(destination)) {
       fs.mkdirSync(path.dirname(destination), { recursive: true });
-      await this.git(repositoryRoot, ["worktree", "add", "--detach", destination, "HEAD"]);
+      await this.git(repositoryRoot, ["worktree", "add", "--detach", destination, baseRef]);
     }
     return destination;
   }
@@ -198,7 +198,7 @@ export class CodexExecutor {
     if (!this.cachedStatus.available) await this.checkAvailability();
     if (!this.cachedStatus.available) throw new Error(`Codex executor unavailable: ${this.cachedStatus.reason}`);
     const sourceRoot = this.resolveSourceRoot(asset);
-    const worktree = await this.prepareWorktree(sourceRoot, task.id);
+    const worktree = await this.prepareWorktree(sourceRoot, task.id, task.input.baseRef || "HEAD");
     const prompt = taskPrompt({ task, agent, asset });
     const args = [
       "--ask-for-approval", "never",

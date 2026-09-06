@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const EMPTY_STATE = {
+export const EMPTY_STATE = {
   agents: [],
   goals: [],
   projects: [],
@@ -11,10 +11,12 @@ const EMPTY_STATE = {
   assets: [],
   policies: [],
   accessRequests: [],
-  jobTemplates: []
+  jobTemplates: [],
+  integrationRequests: [],
+  externalActions: []
 };
 
-function normalizeState(input) {
+export function normalizeState(input) {
   const state = { ...EMPTY_STATE, ...input };
   state.agents = Array.isArray(state.agents) ? state.agents : [];
   state.goals = Array.isArray(state.goals) ? state.goals : [];
@@ -31,6 +33,8 @@ function normalizeState(input) {
   }) : [];
   state.accessRequests = Array.isArray(state.accessRequests) ? state.accessRequests : [];
   state.jobTemplates = Array.isArray(state.jobTemplates) ? state.jobTemplates : [];
+  state.integrationRequests = Array.isArray(state.integrationRequests) ? state.integrationRequests : [];
+  state.externalActions = Array.isArray(state.externalActions) ? state.externalActions : [];
 
   state.agents = state.agents.map((agent) => ({
     templateId: null,
@@ -78,6 +82,8 @@ function normalizeState(input) {
       autoRetryCount: 0,
       founderReviewRequired: false,
       nextAttemptAt: null,
+      leaseId: null,
+      leaseExpiresAt: null,
       ...task
     };
     const isLegacyPlaceholder = normalized.status === "completed"

@@ -61,7 +61,7 @@ Open Reports and Audit.
 
 Return to Home or Projects.
 
-> The v0.8 development version connects goals to CEO proposals, approved projects, assigned employee tasks, independent document review, bounded automatic revision, model-run budgets, and a final CEO report. Next come code integration, durable execution, stronger factual verification, and scoped external connectors.
+> The v0.9 development version adds durable local state, leased task recovery, approved code integration, and scoped research, email, CRM, and publishing connectors. Code and external actions remain separate Founder-controlled stages. Next come stronger factual verification, PostgreSQL, distributed workers, authenticated teams, managed secrets, remote pull requests, and deployment controls.
 
 End with the repository URL:
 

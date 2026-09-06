@@ -1,6 +1,6 @@
 {
   "name": "ai-organization-os-mvp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/interstellar-ai/ai-organization-os",
   "type": "module",
-  "description": "A dependency-free MVP for managing AI agents, goals, tasks, memories and tools.",
+  "description": "A controlled AI organization runtime with agents, goals, durable tasks, permissions and approved tool execution.",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

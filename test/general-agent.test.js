@@ -99,7 +99,7 @@ test("artifact validation rejects false delivery, path injection and oversized c
   ]) assert.throws(() => validateWorkResult(payload), /invalid delivery contract/);
 });
 
-test("duplicate execution is refused and interrupted work becomes retryable", async (t) => {
+test("duplicate execution is refused and interrupted work is safely requeued", async (t) => {
   const { organization, allow, create, calls } = setup(t);
   allow();
   const task = create();
@@ -110,7 +110,37 @@ test("duplicate execution is refused and interrupted work becomes retryable", as
   const interrupted = create();
   organization.updateTask(interrupted.id, { status: "running" });
   organization.recoverInterruptedTasks();
-  assert.equal(organization.getTask(interrupted.id).status, "failed");
+  assert.equal(organization.getTask(interrupted.id).status, "pending");
+  assert.equal(organization.getTask(interrupted.id).leaseId, null);
+});
+
+test("expired leases are recovered while active leases remain claimed", (t) => {
+  const { organization, allow, create } = setup(t);
+  allow();
+  const expired = create();
+  const active = create();
+  organization.updateTask(expired.id, { status: "running", leaseId: "expired", leaseExpiresAt: new Date(Date.now() - 1000).toISOString() });
+  organization.updateTask(active.id, { status: "running", leaseId: "active", leaseExpiresAt: new Date(Date.now() + 60_000).toISOString() });
+  assert.equal(organization.recoverExpiredLeases(), 1);
+  assert.equal(organization.getTask(expired.id).status, "pending");
+  assert.equal(organization.getTask(active.id).status, "running");
+});
+
+test("an executor cannot persist output after losing its task lease", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-org-stale-lease-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const organization = new Organization(new JsonStore(path.join(root, "state.json")), null);
+  organization.tools = {
+    list: () => [{ name: "lease.test" }],
+    execute: async (_name, _input, { task }) => {
+      organization.updateTask(task.id, { leaseId: "replacement-lease" });
+      return { evidence: [{ type: "test" }] };
+    }
+  };
+  const task = organization.createTask({ title: "Lease test", toolName: "lease.test" });
+  await assert.rejects(organization.executeTask(task.id), /output was discarded/);
+  assert.equal(organization.getTask(task.id).output, null);
+  assert.equal(organization.getTask(task.id).leaseId, "replacement-lease");
 });
 
 test("scheduler leaves another request for the same employee queued", async (t) => {

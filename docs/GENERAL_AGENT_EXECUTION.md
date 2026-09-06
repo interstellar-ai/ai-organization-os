@@ -43,5 +43,5 @@ Missing sign-in or CLI availability blocks intake. Missing inputs produce questi
 1. Add reviewer performance evaluation, stronger factual verification, and policy-aware context retrieval to the implemented quality gate.
 2. Extend the implemented CEO planner with cancellation, budget editing, and approved in-place scope changes. Keep planning separate from execution authority.
 3. Add permission-filtered retrieval and brokered tools. Validate each operation outside the model using runtime identity, task scope, target asset, and approval; never hand the model unrestricted credentials.
-4. Move execution to a persistent queue and database with cancellation, leases, idempotency, cost limits, and retry policies.
+4. Extend the current SQLite lease protocol to distributed workers with heartbeats, cancellation, dead-letter handling, and cost controls.
 5. Add separately optional providers, including Responses API, without changing employee permissions or the delivery contract.

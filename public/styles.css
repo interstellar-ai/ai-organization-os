@@ -278,6 +278,13 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
 .approval-card { padding: 18px; }
 .approval-context { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
 .approval-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.approval-decision-form { display: grid; gap: 12px; margin-top: 16px; }
+.approval-card pre, .action-preview pre { max-height: 320px; padding: 12px; overflow: auto; border-radius: 10px; background: #f5f6f1; white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.6 ui-monospace, monospace; }
+.action-preview, .external-config { margin-top: 16px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: #fafbf8; }
+.action-preview p, .external-config p { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.external-config details { margin-top: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.external-config summary { cursor: pointer; font-size: 11px; font-weight: 700; }
+.external-config form { display: grid; gap: 10px; margin-top: 12px; }
 .reject-button { min-height: 38px; padding: 0 13px; border: 1px solid #e1b8b3; border-radius: 9px; background: var(--red-soft); color: var(--red); font-weight: 700; cursor: pointer; }
 .memory-card { padding: 17px; }
 .memory-card h3 { font-family: Georgia, serif; font-size: 16px; font-weight: 500; line-height: 1.4; }

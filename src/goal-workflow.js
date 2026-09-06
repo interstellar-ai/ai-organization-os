@@ -227,7 +227,6 @@ export class GoalWorkflow {
     if (!this.runtimeOptions().codexAvailable) throw new Error("Codex runtime is unavailable");
     const asset = org.list("assets").find((a) => a.id === input.assetId && a.type === "source_code" && a.workspacePath);
     if (!asset) throw new Error("A configured source-code asset is required");
-    if (task.dependsOn.some((dep) => org.getTask(dep).executionMode === "code")) throw new Error("Apply upstream code to a reviewed workspace before code chaining; automatic code chaining is not available");
     const result = org.updateTask(taskId, { status: "pending", toolName: "code.codex", executor: "code.codex",
       input: { assetId: asset.id, instructions: task.description }, accessScope: [{ assetId: asset.id, actions: ["read", "modify", "execute"] }],
       accessExpiresAt: new Date(Date.now() + 4 * 60 * 60_000).toISOString(), error: null, blockedReason: null, nextAction: null });
@@ -363,6 +362,7 @@ export class GoalWorkflow {
     const delayMs = retryCount === 0 ? 2000 : 5000;
     const retry = this.organization.updateTask(task.id, { status: "pending", error: null,
       autoRetryCount: retryCount + 1, nextAttemptAt: new Date(Date.now() + delayMs).toISOString(),
+      leaseId: null, leaseExpiresAt: null,
       nextAction: `Temporary failure. Automatic attempt ${retryCount + 2} of ${goal.autonomyPolicy.maxExecutionAttempts} is scheduled.` });
     this.organization.recordEvent("task.retry_scheduled", { taskId: task.id, attempt: retryCount + 2, delayMs });
     return retry;
@@ -387,6 +387,7 @@ export class GoalWorkflow {
     }
     const blocked = org.updateTask(task.id, { status: "blocked", founderReviewRequired: true,
       attempts: Math.max(0, (task.attempts || 1) - 1), blockedReason: "The approved model-run budget is exhausted.",
+      leaseId: null, leaseExpiresAt: null,
       nextAction: "Founder approval is required before additional model usage." });
     org.recordEvent("goal.budget_exhausted", { goalId: task.goalId, taskId: task.id });
     return blocked;
@@ -441,7 +442,8 @@ export class GoalWorkflow {
     const goal = org.getGoal(goalId);
     if (!goal.approvedPlanId || goal.autonomyPolicy?.mode !== "controlled") return null;
     const work = org.list("tasks").filter((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.taskKind === "work");
-    if (!work.length || work.some((t) => t.status !== "completed")) return null;
+    if (!work.length || work.some((t) => t.status !== "completed"
+      || (t.toolName === "code.codex" && t.integrationStatus !== "integrated"))) return null;
     const existing = org.list("tasks").find((t) => t.goalId === goalId && t.planId === goal.approvedPlanId && t.taskKind === "goal_report");
     if (existing) return existing;
     const ceo = org.list("agents").find((a) => a.jobType === "ai_ceo" && a.capabilities.includes("iterate"));

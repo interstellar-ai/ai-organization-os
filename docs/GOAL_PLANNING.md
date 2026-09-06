@@ -30,12 +30,12 @@ Projects display their coordinator, success criteria, tasks, blockers, and accep
 | Mode | Current behavior |
 | --- | --- |
 | Document | General employee writes files using the goal brief and approved accepted dependency outputs. |
-| Code | Founder explicitly selects a configured source-code asset. Existing read/modify/execute policy checks still apply. Output remains in an isolated worktree and awaits review; acceptance does not apply or publish it. |
-| External | Remains blocked with a connector requirement. Retrying as a document task cannot silently perform or replace the external action. |
+| Code | Founder explicitly selects a configured source-code asset. Existing read/modify/execute policy checks still apply. Output remains in an isolated worktree and awaits review; acceptance creates a separate integration approval. |
+| External | Remains blocked until the Founder prepares and approves an exact request for a configured research, email, CRM, or publishing connector. Retrying as a document task cannot silently perform or replace it. |
 
-Code chaining across isolated worktrees is blocked until a reviewed apply/integration workflow exists. The planner must keep essential unavailable business actions visible instead of quietly substituting document drafts. Model classification of intent is not a security control; actual external tools are not exposed by the general provider.
+Downstream code waits for accepted upstream code to pass the approved `codex/integration` test gate, then starts from that branch. The planner must keep essential unavailable business actions visible instead of quietly substituting document drafts. Model classification of intent is not a security control; external credentials and connector invocation remain in the host application.
 
-Planning and worker execution use local JSON persistence and the existing CLI sandbox boundary, not a durable multi-tenant queue. Controlled plans now have bounded model-run budgets, transient retries, independent document review, automatic revision, and a final CEO report. Interrupted tasks after a server restart still require explicit retry. Cancellation, in-place replanning, project-scoped asset policy, code integration, and external business-outcome evidence remain future work.
+Planning and worker execution use transactional local SQLite state, persisted leases, bounded model-run budgets, transient retries, independent document review, automatic revision, and a final CEO report. Interrupted idempotent tasks are requeued; interrupted external side effects become uncertain. This remains a single-node trusted runtime, not a durable multi-tenant service. Cancellation, in-place replanning, project-scoped asset policy, distributed workers, and broader business-outcome verification remain future work.
 
 ## API
 
@@ -46,4 +46,7 @@ Planning and worker execution use local JSON persistence and the existing CLI sa
 - `GET /api/goals/:id/summary` includes the planning conversation, approved work, projects, delivery progress, and outcome status.
 - `GET /api/projects` returns projects with their tasks and delivery progress.
 - `POST /api/tasks/:id/configure-code` accepts an explicit `assetId` for blocked or failed plan code work. Permissions are checked before execution.
+- `POST /api/tasks/:id/request-integration` creates or returns the separate integration request for an accepted code delivery.
+- `POST /api/tasks/:id/configure-external` validates and stores a non-executing external action preview.
+- Integration and external-action decision endpoints require a recorded Founder reason.
 - Existing task feedback, artifact download, and acceptance endpoints handle delivery work.

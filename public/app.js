@@ -13,6 +13,9 @@ const state = {
   policies: [],
   jobTemplates: [],
   accessRequests: [],
+  integrationRequests: [],
+  externalActions: [],
+  connectors: [],
   employeeView: "directory",
   accessTab: "employees",
   selectedAssetId: null,
@@ -110,7 +113,11 @@ function goalCard(goal) {
 }
 
 function renderHome() {
-  const pending = state.accessRequests.filter((request) => request.status === "pending");
+  const pending = [
+    ...state.accessRequests.filter((request) => request.status === "pending"),
+    ...state.integrationRequests.filter((request) => request.status === "pending"),
+    ...state.externalActions.filter((request) => request.status === "pending")
+  ];
   const blocked = state.tasks.filter((task) => ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status));
   const reviews = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_review");
   const completed = state.tasks.filter((task) => task.status === "completed").length;
@@ -120,17 +127,19 @@ function renderHome() {
     metric("AI employees", state.agents.length, `${new Set(state.agents.map((agent) => agent.department)).size} departments represented`),
     metric("Active goals", state.goals.filter((goal) => goal.status === "active").length, `${reviews.length} awaiting Founder review`),
     metric("Verified tasks", completed, `${evidence} evidence records attached`),
-    metric("Pending approvals", pending.length, pending.length ? "Founder decision required" : "No access decisions waiting")
+    metric("Pending approvals", pending.length, pending.length ? "Founder decision required" : "No decisions waiting")
   ].join("");
 
   const attention = [
-    ...pending.map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: assetById(request.assetId)?.name || "Unknown asset", action: "Approval" })),
+    ...state.accessRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: assetById(request.assetId)?.name || "Unknown asset", action: "Approval" })),
+    ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Review" })),
+    ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: state.tasks.find((task) => task.id === request.taskId)?.title || "External work", action: "Review" })),
     ...blocked.slice(0, 3).map((task) => ({ signal: "red", title: task.title, note: task.blockedReason || task.error || task.nextAction || "Execution needs attention", action: task.status === "awaiting_review" ? "Review" : task.status === "needs_input" ? "Reply" : "Blocked" })),
     ...reviews.slice(0, 3).map((goal) => ({ signal: "", title: goal.title, note: `${goal.progress.completed} tasks completed with evidence`, action: "Review" }))
   ].slice(0, 6);
   document.querySelector("#attentionList").innerHTML = attention.length
     ? attention.map((item) => `<div class="attention-item"><i class="attention-signal ${item.signal}"></i><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.note)}</span></div><b>${escapeHtml(item.action)}</b></div>`).join("")
-    : `<div class="attention-item"><i class="attention-signal green"></i><div><strong>No urgent decisions</strong><span>The organization has no pending access request or blocked workflow.</span></div><b>Clear</b></div>`;
+    : `<div class="attention-item"><i class="attention-signal green"></i><div><strong>No urgent decisions</strong><span>The organization has no pending approval or blocked workflow.</span></div><b>Clear</b></div>`;
   document.querySelector("#homeGoalList").innerHTML = state.goalSummaries.length
     ? state.goalSummaries.slice().reverse().slice(0, 4).map(goalCard).join("")
     : empty("No goals yet. Begin with a Founder command above.");
@@ -144,7 +153,7 @@ function renderProjects() {
   statusBadge.textContent = codex.available ? "AI employees ready" : "AI runtime unavailable";
   statusBadge.classList.toggle("warning", !codex.available);
   document.querySelector("#executorRuntimeNotice").innerHTML = codex.available
-    ? `<strong>Work, review and continue</strong><span>Employees can deliver product briefs, analysis of supplied material, design specifications, content drafts and operating plans. Open a request to read its files, answer questions or accept delivery. Live web research and external actions are not connected.</span>`
+    ? `<strong>Work, review and controlled action</strong><span>Employees can deliver documents and isolated code changes. Accepted code can enter a tested integration branch after approval. Research, email, CRM and publishing use separately configured connectors and exact-payload approval.</span>`
     : `<strong>General intake is ready; execution is limited</strong><span>Requests can be classified and assigned, but model-backed work remains blocked until an approved executor is connected. ${escapeHtml(codex.reason || "Codex is not available.")}</span>`;
 
   const employees = [...state.agents].sort((left, right) => left.department.localeCompare(right.department) || left.name.localeCompare(right.name));
@@ -183,7 +192,8 @@ function renderWorkDelivery() {
   const task = state.tasks.find((item) => item.id === selectedWorkTaskId);
   document.querySelector("#workDeliveryPanel").classList.toggle("hidden", !task);
   if (!task) { deliveryVersion = ""; return; }
-  const version = JSON.stringify(task);
+  const version = JSON.stringify({ task, integration: state.integrationRequests.filter((item) => item.taskId === task.id),
+    external: state.externalActions.filter((item) => item.taskId === task.id), connectors: state.connectors });
   if (version === deliveryVersion) return;
   deliveryVersion = version;
   const output = task.output || {};
@@ -191,17 +201,43 @@ function renderWorkDelivery() {
   const files = (artifacts = [], download = false) => artifacts.map((artifact, index) => `<details class="delivery-file"><summary>${escapeHtml(artifact.filename)}${download ? ` · ${artifact.bytes} bytes` : ""}</summary><pre>${escapeHtml(artifact.content)}</pre>${download ? `<a class="text-button" href="/api/tasks/${encodeURIComponent(task.id)}/artifacts/${index}" download>Download file</a>` : ""}</details>`).join("");
   document.querySelector("#workDeliveryContent").innerHTML = `<h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(output.summary || task.description)}</p><p>${escapeHtml(task.error || task.blockedReason || task.nextAction || "")}</p>${list("Questions from the employee", output.questions)}${list("Limitations", output.limitations)}${files(output.artifacts, true)}${(task.messages || []).map((message) => `<blockquote><strong>${message.role === "quality_reviewer" ? "Independent reviewer" : "Founder"}</strong><p>${escapeHtml(message.content)}</p></blockquote>`).join("")}<details><summary>Execution history (${task.executionHistory?.length || 0})</summary>${(task.executionHistory || []).map((run) => `<h4>Attempt ${run.attempt} · ${escapeHtml(titleize(run.status))}</h4><p>${escapeHtml(run.output?.summary || run.error || "No delivery")}</p>${files(run.output?.artifacts)}`).join("")}</details>`;
   const canReply = task.taskKind !== "goal_planning" && task.executionMode !== "external" && task.workType !== "software_development" && ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status);
-  const canAcceptCode = task.planId && task.workType === "software_development" && task.status === "awaiting_review";
+  const canAcceptCode = task.workType === "software_development" && task.status === "awaiting_review";
   document.querySelector("#workFeedbackForm").classList.toggle("hidden", !canReply && !canAcceptCode);
   document.querySelector("#workFeedbackMessage").closest("label").classList.toggle("hidden", !canReply);
   document.querySelector("#sendWorkFeedback").classList.toggle("hidden", !canReply);
   document.querySelector("#acceptWorkButton").classList.toggle("hidden", task.status !== "awaiting_review");
-  if (task.planId && task.executionMode === "code") {
+  if (task.executionMode === "code" || task.workType === "software_development") {
     const assets = state.assets.filter((a) => a.type === "source_code" && a.workspacePath);
-    document.querySelector("#workDeliveryContent").insertAdjacentHTML("beforeend", `<p class="notice">Code changes remain in an isolated worktree. Acceptance records your review; it does not apply, merge, publish or deploy code.</p>${list("Changed files", task.output?.changedFiles)}${["blocked", "failed"].includes(task.status) ? `<form data-configure-code="${escapeHtml(task.id)}"><label>Protected codebase<select name="assetId" required><option value="">Select explicitly</option>${assets.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join("")}</select></label><button type="submit" class="secondary-button">Use this codebase and queue task</button></form>` : ""}`);
+    const integration = state.integrationRequests.find((item) => item.id === task.integrationRequestId)
+      || state.integrationRequests.find((item) => item.taskId === task.id);
+    const integrationNotice = integration
+      ? `<section class="action-preview"><div class="goal-top"><strong>Code integration · ${escapeHtml(titleize(integration.status))}</strong><span class="status ${escapeHtml(integration.status)}">${escapeHtml(titleize(integration.status))}</span></div><p>Target: ${escapeHtml(integration.targetBranch)}. This workflow never pushes, merges into main or deploys.</p>${integration.result ? `<p>Tests: ${escapeHtml(titleize(integration.result.test?.status))} · Commit ${escapeHtml(integration.result.integrationCommit?.slice(0, 12))}</p>` : ""}${integration.error ? `<p>${escapeHtml(integration.error)}</p>` : ""}${["failed", "rejected"].includes(integration.status) ? `<form data-request-integration="${escapeHtml(task.id)}"><button class="secondary-button" type="submit">Create a new integration request</button></form>` : ""}</section>`
+      : "";
+    document.querySelector("#workDeliveryContent").insertAdjacentHTML("beforeend", `<p class="notice">Code changes remain in an isolated worktree until you accept the delivery and separately approve integration. Successful integration targets codex/integration only.</p>${list("Changed files", task.output?.changedFiles)}${integrationNotice}${["blocked", "failed"].includes(task.status) ? `<form data-configure-code="${escapeHtml(task.id)}"><label>Protected codebase<select name="assetId" required><option value="">Select explicitly</option>${assets.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join("")}</select></label><button type="submit" class="secondary-button">Use this codebase and queue task</button></form>` : ""}`);
   }
+  if (task.executionMode === "external") renderExternalConfiguration(task);
   if (task.dependsOn?.length) document.querySelector("#workDeliveryContent").insertAdjacentHTML("beforeend", list("Depends on accepted work", task.dependsOn.map((id) => { const dep = state.tasks.find((t) => t.id === id); return `${dep?.title || "Missing task"}: ${titleize(dep?.status)}`; })));
   document.querySelector("#sendWorkFeedback").textContent = ["blocked", "failed"].includes(task.status) ? "Retry with this brief" : "Send and continue";
+}
+
+function renderExternalConfiguration(task) {
+  const panel = document.querySelector("#workDeliveryContent");
+  const current = state.externalActions.find((item) => item.id === task.externalActionId)
+    || state.externalActions.find((item) => item.taskId === task.id && !["rejected", "failed"].includes(item.status));
+  if (current) {
+    panel.insertAdjacentHTML("beforeend", `<section class="action-preview"><div class="goal-top"><strong>${escapeHtml(titleize(current.connectorType))} action</strong><span class="status ${escapeHtml(current.status)}">${escapeHtml(titleize(current.status))}</span></div><pre>${escapeHtml(JSON.stringify(current.preview, null, 2))}</pre><p>${escapeHtml(current.result?.summary || current.error || task.nextAction || "Waiting for a Founder decision.")}</p></section>`);
+    return;
+  }
+  if (!["blocked", "failed"].includes(task.status)) return;
+  const asset = (type) => state.assets.find((item) => item.type === "external_connector" && item.connectorType === type);
+  const status = (type) => state.connectors.find((item) => item.type === type);
+  const badge = (type) => status(type)?.configured ? "Ready" : "Needs server configuration";
+  panel.insertAdjacentHTML("beforeend", `<section class="external-config"><h4>Choose an external tool</h4><p>Submitting creates an exact action preview. Nothing is sent until you approve that preview in Approvals.</p>
+    ${asset("web_research") ? `<details><summary>Live web research · ${escapeHtml(badge("web_research"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="web_research"><input type="hidden" name="assetId" value="${escapeHtml(asset("web_research").id)}" /><label>Research question<input name="query" placeholder="What should the employee investigate?" /></label><label>Public source URLs<textarea name="urls" placeholder="One HTTPS URL per line. Optional when web search is configured."></textarea></label><button class="secondary-button" type="submit">Prepare research action</button></form></details>` : ""}
+    ${asset("email") ? `<details><summary>Email · ${escapeHtml(badge("email"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="email"><input type="hidden" name="assetId" value="${escapeHtml(asset("email").id)}" /><label>Recipient<input name="to" type="email" required /></label><label>Subject<input name="subject" required /></label><label>Message<textarea name="text" required></textarea></label><button class="secondary-button" type="submit">Prepare email approval</button></form></details>` : ""}
+    ${asset("crm") ? `<details><summary>CRM record · ${escapeHtml(badge("crm"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="crm"><input type="hidden" name="assetId" value="${escapeHtml(asset("crm").id)}" /><label>Record type<select name="objectType"><option value="contacts">Contact</option><option value="companies">Company</option><option value="deals">Deal</option></select></label><label>Primary name<input name="primaryName" required placeholder="Person, company or deal name" /></label><label>Email, if applicable<input name="email" type="email" /></label><button class="secondary-button" type="submit">Prepare CRM approval</button></form></details>` : ""}
+    ${asset("publishing") ? `<details><summary>Publishing · ${escapeHtml(badge("publishing"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="publishing"><input type="hidden" name="assetId" value="${escapeHtml(asset("publishing").id)}" /><label>Destination<input name="destination" required placeholder="Approved channel or site" /></label><label>Title<input name="title" /></label><label>Content<textarea name="content" required></textarea></label><button class="secondary-button" type="submit">Prepare publishing approval</button></form></details>` : ""}
+  </section>`);
 }
 
 function employeeStatus(agent) {
@@ -387,17 +423,38 @@ function renderAccess() {
 }
 
 function renderApprovals() {
-  const items = state.accessRequests.slice().reverse();
-  const pending = items.filter((request) => request.status === "pending").length;
+  const accessItems = state.accessRequests.slice().reverse();
+  const integrations = state.integrationRequests.slice().reverse();
+  const externalActions = state.externalActions.slice().reverse();
+  const pending = [...accessItems, ...integrations, ...externalActions].filter((request) => request.status === "pending").length;
   const navCount = document.querySelector("#approvalNavCount");
   navCount.textContent = pending;
   navCount.classList.toggle("hidden", pending === 0);
-  document.querySelector("#approvalList").innerHTML = items.length ? items.map((request) => {
+  const accessCards = accessItems.map((request) => {
     const agent = agentById(request.requesterAgentId);
     const asset = assetById(request.assetId);
     const grantDetail = request.status === "consumed" ? "One-use grant consumed" : request.expiresAt ? `Expires ${formatTime(request.expiresAt)}` : request.usesRemaining === 1 ? "One use remaining" : titleize(request.grantType);
     return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">ACCESS REQUEST</span><h3>${escapeHtml(agent?.name || "Unknown employee")} requests ${escapeHtml(request.action)}</h3></div><span class="status ${escapeHtml(request.status)}">${escapeHtml(titleize(request.status))}</span></div><p>${escapeHtml(request.reason)}</p><div class="approval-context"><div class="detail-field"><span>Asset</span><strong>${escapeHtml(asset?.name || "Unknown")}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(request.risk)}</strong></div><div class="detail-field"><span>Grant</span><strong>${escapeHtml(grantDetail)}</strong></div><div class="detail-field"><span>Requested</span><strong>${escapeHtml(formatTime(request.createdAt))}</strong></div></div>${request.status === "pending" ? `<div class="approval-actions"><button class="reject-button" data-access-decision="rejected" data-request-id="${escapeHtml(request.id)}">Reject</button><button class="secondary-button" data-access-decision="approved" data-grant-type="time_bound" data-request-id="${escapeHtml(request.id)}">Approve 1 hour</button><button class="primary-button" data-access-decision="approved" data-grant-type="once" data-request-id="${escapeHtml(request.id)}">Approve once</button></div>` : `<div class="goal-meta"><span>Decided by ${escapeHtml(request.decidedBy || "—")}</span><span>${escapeHtml(request.decisionReason || "No decision note")}</span></div>`}</article>`;
-  }).join("") : empty("No approval requests have been created.");
+  });
+  const integrationCards = integrations.map((request) => {
+    const task = state.tasks.find((item) => item.id === request.taskId);
+    return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">CODE INTEGRATION</span><h3>${escapeHtml(task?.title || "Code delivery")}</h3></div><span class="status ${escapeHtml(request.status)}">${escapeHtml(titleize(request.status))}</span></div><p>Apply reviewed files to the isolated ${escapeHtml(request.targetBranch)} branch and run the configured test command. This does not push, merge main or deploy.</p><div class="approval-context"><div class="detail-field"><span>Files</span><strong>${request.changedFiles.length}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(request.risk)}</strong></div><div class="detail-field"><span>Target</span><strong>${escapeHtml(request.targetBranch)}</strong></div><div class="detail-field"><span>Requested</span><strong>${escapeHtml(formatTime(request.createdAt))}</strong></div></div>${request.changedFiles.length ? `<div class="memory-tags">${request.changedFiles.map((file) => `<span class="tag">${escapeHtml(file)}</span>`).join("")}</div>` : ""}${request.error ? `<p>${escapeHtml(request.error)}</p>` : ""}${request.result ? `<p>Integration commit ${escapeHtml(request.result.integrationCommit?.slice(0, 12))} · tests ${escapeHtml(titleize(request.result.test?.status))}</p>` : ""}${request.status === "pending" ? decisionForm("integration", request.id) : decisionNote(request)}</article>`;
+  });
+  const externalCards = externalActions.map((action) => {
+    const task = state.tasks.find((item) => item.id === action.taskId);
+    const connector = state.connectors.find((item) => item.type === action.connectorType);
+    return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">EXTERNAL ACTION</span><h3>${escapeHtml(task?.title || titleize(action.connectorType))}</h3></div><span class="status ${escapeHtml(action.status)}">${escapeHtml(titleize(action.status))}</span></div><p>Approve only if this exact payload and destination are correct. ${action.connectorType === "web_research" ? "This action reads public sources." : "This action may change an external system."}</p><div class="approval-context"><div class="detail-field"><span>Connector</span><strong>${escapeHtml(titleize(action.connectorType))}</strong></div><div class="detail-field"><span>Operation</span><strong>${escapeHtml(action.operation)}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(action.risk)}</strong></div><div class="detail-field"><span>Runtime</span><strong>${connector?.configured ? "Ready" : "Not configured"}</strong></div></div><details open><summary>Exact action payload</summary><pre>${escapeHtml(JSON.stringify(action.payload, null, 2))}</pre></details>${action.error ? `<p>${escapeHtml(action.error)}</p>` : ""}${action.result ? `<p>${escapeHtml(action.result.summary)} · receipt ${escapeHtml(action.result.receiptId)}</p>` : ""}${action.status === "pending" ? decisionForm("external", action.id, !connector?.configured) : decisionNote(action)}</article>`;
+  });
+  const cards = [...externalCards, ...integrationCards, ...accessCards];
+  document.querySelector("#approvalList").innerHTML = cards.length ? cards.join("") : empty("No approval requests have been created.");
+}
+
+function decisionForm(type, id, approvalDisabled = false) {
+  return `<form class="approval-decision-form" data-decision-type="${escapeHtml(type)}" data-decision-id="${escapeHtml(id)}"><label>Founder decision note<input name="reason" required maxlength="1000" placeholder="Why you approve or reject this exact action" /></label><div class="approval-actions"><button class="reject-button" name="decision" value="rejected" type="submit">Reject</button><button class="primary-button" name="decision" value="approved" type="submit" ${approvalDisabled ? "disabled" : ""}>Approve exact action</button></div></form>`;
+}
+
+function decisionNote(item) {
+  return `<div class="goal-meta"><span>Decided by ${escapeHtml(item.decidedBy || "system")}</span><span>${escapeHtml(item.decisionReason || item.error || "No decision note")}</span></div>`;
 }
 
 function renderKnowledge() {
@@ -433,6 +490,8 @@ function renderSettings() {
   document.querySelector("#settingsVersion").textContent = `AI Organization OS ${state.health?.version || "—"}`;
   document.querySelector("#settingsScheduler").textContent = titleize(state.health?.scheduler || "unknown");
   document.querySelector("#settingsTools").textContent = state.health?.toolCount ?? "—";
+  document.querySelector("#settingsStorage").textContent = titleize(state.health?.storage || "unknown");
+  document.querySelector("#settingsConnectors").innerHTML = state.connectors.map((connector) => `<div class="setting-row"><span>${escapeHtml(titleize(connector.type))}</span><strong class="${connector.configured ? "" : "danger-text"}">${connector.configured ? "Ready" : "Not configured"}</strong></div>`).join("");
 }
 
 function renderAll() {
@@ -451,11 +510,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/job-templates"), api("/api/projects")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects, integrationRequests, externalActions, connectors] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects, integrationRequests, externalActions, connectors });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -637,17 +696,58 @@ document.querySelector("#workRequestForm").addEventListener("submit", async (eve
 
 document.querySelector("#closeWorkDelivery").addEventListener("click", () => { selectedWorkTaskId = null; renderWorkDelivery(); });
 document.querySelector("#workDeliveryContent").addEventListener("submit", async (event) => {
-  const form = event.target.closest("[data-configure-code]");
+  const form = event.target.closest("[data-configure-code], [data-configure-external], [data-request-integration]");
   if (!form) return;
   event.preventDefault();
   const button = form.querySelector("button");
   button.disabled = true;
   try {
-    await api(`/api/tasks/${form.dataset.configureCode}/configure-code`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+    if (form.dataset.configureCode) {
+      await api(`/api/tasks/${form.dataset.configureCode}/configure-code`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+      toast("Code task queued. Existing permissions will be checked before execution.");
+    } else if (form.dataset.requestIntegration) {
+      await api(`/api/tasks/${form.dataset.requestIntegration}/request-integration`, { method: "POST", body: "{}" });
+      toast("A new code integration request is ready for your review.");
+    } else {
+      const values = Object.fromEntries(new FormData(form));
+      const connectorType = form.dataset.connector;
+      let payload;
+      if (connectorType === "web_research") payload = { query: values.query, urls: values.urls.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) };
+      if (connectorType === "email") payload = { to: values.to, subject: values.subject, text: values.text };
+      if (connectorType === "crm") {
+        const primaryName = values.primaryName.trim();
+        const properties = values.objectType === "contacts"
+          ? { firstname: primaryName.split(/\s+/)[0], lastname: primaryName.split(/\s+/).slice(1).join(" ") || "Unknown", ...(values.email ? { email: values.email } : {}) }
+          : values.objectType === "companies" ? { name: primaryName } : { dealname: primaryName };
+        payload = { objectType: values.objectType, properties };
+      }
+      if (connectorType === "publishing") payload = { destination: values.destination, title: values.title, content: values.content };
+      await api(`/api/tasks/${form.dataset.configureExternal}/configure-external`, { method: "POST",
+        body: JSON.stringify({ connectorType, assetId: values.assetId, payload }) });
+      toast("Exact action preview created. Review it in Approvals before anything happens externally.");
+      showPage("approvals");
+    }
     await refreshData({ quiet: true });
-    toast("Code task queued. Existing permissions will be checked before execution.");
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
+});
+
+document.querySelector("#approvalList").addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-decision-type]");
+  if (!form) return;
+  event.preventDefault();
+  const submitter = event.submitter;
+  if (!submitter || submitter.disabled) return;
+  const buttons = [...form.querySelectorAll("button")];
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    const endpoint = form.dataset.decisionType === "integration" ? "integration-requests" : "external-actions";
+    await api(`/api/${endpoint}/${form.dataset.decisionId}/decision`, { method: "POST",
+      body: JSON.stringify({ decision: submitter.value, reason: new FormData(form).get("reason") }) });
+    toast(submitter.value === "approved" ? "Approved action completed or safely queued." : "Action rejected without execution.");
+    await refreshData({ quiet: true });
+  } catch (error) { toast(error.message, true); }
+  finally { buttons.forEach((button) => { button.disabled = false; }); }
 });
 document.querySelector("#workFeedbackForm").addEventListener("submit", async (event) => {
   event.preventDefault();

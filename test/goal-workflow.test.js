@@ -35,7 +35,8 @@ function setup(t) {
   const codeCalls = [];
   org.tools = createDefaultTools(org, { generalExecutor: executor, codexExecutor: { execute: async (input) => {
     codeCalls.push(input);
-    return { summary: "Code change produced in an isolated worktree", changedFiles: ["example.js"], provider: "test" };
+    return { summary: "Code change produced in an isolated worktree", worktreeId: input.task.id,
+      changedFiles: ["example.js"], provider: "test" };
   } } });
   const workflow = new GoalWorkflow(org, executor, () => ({ generalAvailable: true, codexAvailable: true }));
   workflow.registerTool();
@@ -223,6 +224,7 @@ test("explicitly bound plan code work keeps policy checks and waits for acceptan
   assert.equal(delivery.status, "awaiting_review");
   assert.equal(org.getGoal(goal.id).autonomyUsage.modelRuns, 1);
   assert.equal(org.acceptTask(task.id).status, "completed");
+  assert.equal(org.list("integrationRequests")[0].status, "pending");
   assert.equal(org.summarizeGoal(goal.id).outcomeStatus, "unverified");
 });
 

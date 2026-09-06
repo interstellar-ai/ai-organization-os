@@ -53,8 +53,8 @@ When all original work tasks are accepted, the AI CEO automatically prepares `ex
 
 ## Current limitations
 
-- The queue and budget counters use local JSON state and are not safe for multiple server processes.
+- The queue and budget counters use transactional SQLite state and persisted leases. They are crash-durable on one node but are not a distributed multi-tenant queue.
 - There is no cancellation or in-place plan revision.
-- Code work still requires explicit codebase selection and Founder acceptance; isolated worktrees are not automatically applied or chained.
-- External tasks remain blocked until scoped connectors and action-specific approval gates exist.
+- Code work still requires explicit codebase selection and Founder acceptance; a separate approval may integrate it into `codex/integration`, but never push, merge main, or deploy.
+- External tasks remain blocked until an exact connector action is prepared and approved. Side-effect uncertainty always returns to the Founder.
 - Reviewer quality is model-based. Contract validation and role separation reduce risk but do not make evaluation infallible.

@@ -150,16 +150,19 @@ public/index.html + public/styles.css + public/app.js
           → src/tools.js (allowlisted tools)
               → src/executors/codex.js (protected coding worktrees)
               → src/executors/general.js (structured employee documents)
-              → src/store.js (local JSON persistence)
+              → src/executors/integration.js (reviewed integration branch and test gate)
+              → src/executors/connectors.js (research, email, CRM, publishing)
+              → src/sqlite-store.js (transactional local persistence)
+              → src/store.js (legacy JSON adapter and state normalization)
 ```
 
-The scheduler is currently an in-process timer. The store is currently a JSON file. Both are deliberate replacement boundaries for a future worker queue and database.
+The scheduler is an in-process dispatcher with atomic, persisted leases and recovery. SQLite is the default transactional store. Both retain clear adapter boundaries for future distributed workers and PostgreSQL.
 
 ## Decisions
 
-### Local-first storage for the MVP
+### Durable local-first storage
 
-JSON persistence keeps the prototype dependency-free and easy to inspect. It is not suitable for multi-process, multi-user, or high-concurrency production use.
+SQLite WAL persistence gives the single-node runtime atomic commits and crash recovery while keeping deployment simple. The legacy JSON adapter remains available for migration checks. Multi-tenant and horizontally scaled production still requires PostgreSQL, authenticated tenant boundaries, backups, and dedicated workers.
 
 ### Fixed planner before model planner
 
@@ -181,3 +184,15 @@ Legacy tasks without a registered tool may contain a placeholder completion mess
 ## Ongoing notes
 
 Add new entries under this heading with the date, change, decision, and verification result. Do not grow the product document with temporary debugging details or one-off deployment notes.
+
+## 2026-09-06 — Durable controlled execution
+
+- Replaced default JSON writes with transactional SQLite WAL state, schema revision metadata, rollback behavior, and one-time legacy JSON import. Runtime database files remain ignored.
+- Added atomic task claims, persisted lease IDs and expirations, startup recovery, live expired-lease recovery, dependency checks, two-task capacity, and one-task-per-employee enforcement.
+- Added Founder-gated code integration from accepted task worktrees into a local `codex/integration` branch, including safe-file inspection, common credential-pattern checks, conflict abort, allowlisted test commands, and test-failure reversion.
+- Made downstream code and final reporting wait for successful upstream code integration. Integration never pushes, merges `main`, or deploys.
+- Added host-controlled connectors for explicit public-HTTPS research, optional Brave Search, Resend email, HubSpot record creation, and approved publishing webhooks.
+- Added exact external-action previews, one-use policy grants, receipts, audit events, SSRF-oriented URL checks, bounded responses, and uncertain-outcome handling that prevents blind side-effect retries.
+- Added Founder UI for external connector configuration, code and action approvals, connector readiness, receipts, integration status, and durable runtime status.
+- Added focused automated tests for SQLite rollback and reopening, lease recovery, pre-approval network isolation, private-address rejection, uncertain side effects, separate code-integration approval, and real temporary Git integration.
+- Kept the runtime explicitly single-node and trusted. PostgreSQL, distributed workers, authentication, managed secrets, container isolation, remote pull requests, deployment, and disaster recovery remain v1 infrastructure work.

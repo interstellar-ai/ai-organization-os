@@ -3,18 +3,26 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonStore } from "./store.js";
+import { SqliteStore } from "./sqlite-store.js";
 import { Organization, Scheduler } from "./organization.js";
 import { createDefaultTools } from "./tools.js";
 import { CodexExecutor } from "./executors/codex.js";
+import { CodeIntegrationExecutor } from "./executors/integration.js";
+import { ConnectorRegistry } from "./executors/connectors.js";
 import { GeneralAgentExecutor } from "./executors/general.js";
 import { GoalWorkflow } from "./goal-workflow.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(root, "..");
 const port = Number(process.env.PORT || 3333);
-const store = new JsonStore(path.join(projectRoot, "data", "state.json"));
+const legacyStatePath = path.join(projectRoot, "data", "state.json");
+const store = process.env.AI_ORG_STORE === "json"
+  ? new JsonStore(legacyStatePath)
+  : new SqliteStore(path.join(projectRoot, "data", "organization.sqlite"), { importJsonPath: legacyStatePath });
 const organization = new Organization(store, null);
 const codexExecutor = new CodexExecutor({ projectRoot });
+const codeIntegrationExecutor = new CodeIntegrationExecutor({ projectRoot });
+const connectors = new ConnectorRegistry();
 await codexExecutor.checkAvailability();
 const generalExecutor = new GeneralAgentExecutor({ runtime: codexExecutor });
 const tools = createDefaultTools(organization, { codexExecutor, generalExecutor });
@@ -124,7 +132,7 @@ function seed() {
   if (!organization.list("memories").some((memory) => memory.tags?.includes("safety"))) {
     organization.writeMemory({
       scope: "organization",
-      content: "The Founder approves high-impact external actions. The local MVP does not perform external business actions.",
+      content: "The Founder must approve the exact payload for high-impact external actions before a scoped connector can run.",
       tags: ["policy", "safety"],
       source: "seed"
     });
@@ -132,16 +140,23 @@ function seed() {
 
   const ensureAsset = (definition) => organization.list("assets").find((asset) => asset.name === definition.name) || organization.createAsset(definition);
   ensureAsset({ name: "Product Knowledge Base", type: "document_collection", owner: "Product", sensitivity: "internal", environment: "workspace", description: "Approved product definitions and project knowledge." });
-  const sourceCodeAsset = ensureAsset({ name: "Source Code Repository", type: "source_code", owner: "Engineering", sensitivity: "internal", environment: "development", workspacePath: ".", description: "Application source code in the assigned project scope." });
-  if (!sourceCodeAsset.workspacePath) {
+  const sourceCodeAsset = ensureAsset({ name: "Source Code Repository", type: "source_code", owner: "Engineering", sensitivity: "internal", environment: "development", workspacePath: ".", integrationTestCommand: ["npm", "test"], description: "Application source code in the assigned project scope." });
+  if (!sourceCodeAsset.workspacePath || !sourceCodeAsset.integrationTestCommand) {
     store.update((state) => {
       const asset = state.assets.find((item) => item.id === sourceCodeAsset.id);
-      if (asset) asset.workspacePath = ".";
+      if (asset) {
+        asset.workspacePath ||= ".";
+        asset.integrationTestCommand ||= ["npm", "test"];
+      }
       return state;
     });
   }
   ensureAsset({ name: "Local Runtime State", type: "runtime_data", owner: "Operations", sensitivity: "confidential", environment: "development", description: "Local goals, tasks, memory and audit data. Never uploaded to Git." });
   ensureAsset({ name: "Public GitHub Repository", type: "publishing_destination", owner: "Founder", sensitivity: "public", environment: "external", externalImpact: "high", description: "Public source-code destination. Writes require explicit authorization." });
+  ensureAsset({ name: "Web Research Connector", type: "external_connector", connectorType: "web_research", owner: "Research", sensitivity: "public", environment: "external", externalImpact: "medium", description: "Read explicit public HTTPS sources or use configured Brave Search." });
+  ensureAsset({ name: "Email Connector", type: "external_connector", connectorType: "email", owner: "Founder", sensitivity: "confidential", environment: "external", externalImpact: "high", description: "Send an exact Founder-approved message through Resend." });
+  ensureAsset({ name: "CRM Connector", type: "external_connector", connectorType: "crm", owner: "Sales", sensitivity: "confidential", environment: "external", externalImpact: "high", description: "Create exact Founder-approved HubSpot records." });
+  ensureAsset({ name: "Publishing Connector", type: "external_connector", connectorType: "publishing", owner: "Founder", sensitivity: "public", environment: "external", externalImpact: "critical", description: "Publish exact Founder-approved content through a configured HTTPS webhook." });
 
   const ensurePolicy = (definition) => organization.list("policies").find((policy) => policy.name === definition.name) || organization.createPolicy(definition);
   ensureAsset({ name: "General Agent Service", type: "agent_runtime", owner: "Operations", environment: "development",
@@ -157,11 +172,13 @@ function seed() {
   ensurePolicy({ name: "Quality independently validates source code", employeeJobType: "quality_reviewer", assetType: "source_code", actions: ["read", "execute", "approve"], effect: "allow" });
   ensurePolicy({ name: "No employee deletes runtime state", employeeJobType: "*", assetType: "runtime_data", actions: ["delete"], effect: "deny" });
   ensurePolicy({ name: "Public publishing requires explicit grant", employeeJobType: "*", assetType: "publishing_destination", actions: ["publish", "modify"], effect: "approval_required" });
+  ensurePolicy({ name: "External connectors require exact Founder approval", employeeJobType: "*", assetType: "external_connector", actions: ["read", "send", "create", "publish"], effect: "approval_required" });
 }
 
 seed();
 store.update((state) => state);
 organization.recoverInterruptedTasks();
+organization.recoverInterruptedExternalActions();
 scheduler.start();
 
 const json = (response, status, payload) => {
@@ -196,7 +213,8 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/app.js") return serveStatic(response, "app.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/goal-ui.js") return serveStatic(response, "goal-ui.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
-      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.8.0", scheduler: "running", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status() });
+      return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.9.0", storage: store instanceof SqliteStore ? "sqlite-wal" : "json",
+        scheduler: "durable-leased", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status(), connectors: connectors.list() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
@@ -228,6 +246,9 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/access-requests") {
       return json(response, 200, organization.list("accessRequests"));
     }
+    if (request.method === "GET" && url.pathname === "/api/integration-requests") return json(response, 200, organization.list("integrationRequests"));
+    if (request.method === "GET" && url.pathname === "/api/external-actions") return json(response, 200, organization.list("externalActions"));
+    if (request.method === "GET" && url.pathname === "/api/connectors") return json(response, 200, connectors.list());
     if (request.method === "GET" && url.pathname === "/api/job-templates") {
       return json(response, 200, organization.list("jobTemplates"));
     }
@@ -259,6 +280,8 @@ async function route(request, response) {
       return json(response, 200, organization.resumeGeneralTask(parts[2], await body(request), { generalAvailable: generalExecutor.status().available }));
     }
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "accept") return json(response, 200, organization.acceptTask(parts[2]));
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "request-integration") return json(response, 201, organization.requestCodeIntegration(parts[2]));
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "configure-external") return json(response, 201, organization.requestExternalAction(parts[2], await body(request), connectors));
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/job-templates/preview") {
@@ -271,6 +294,12 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access-requests") return json(response, 201, organization.createAccessRequest(await body(request)));
     if (request.method === "POST" && parts[1] === "access-requests" && parts[3] === "decision") {
       return json(response, 200, organization.decideAccessRequest(parts[2], await body(request)));
+    }
+    if (request.method === "POST" && parts[1] === "integration-requests" && parts[3] === "decision") {
+      return json(response, 200, await organization.decideCodeIntegration(parts[2], await body(request), codeIntegrationExecutor));
+    }
+    if (request.method === "POST" && parts[1] === "external-actions" && parts[3] === "decision") {
+      return json(response, 200, await organization.decideExternalAction(parts[2], await body(request), connectors));
     }
     if (request.method === "POST" && url.pathname === "/api/access/consume") return json(response, 200, organization.consumeAccess(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/tools/execute") {
@@ -296,7 +325,12 @@ server.listen(port, "127.0.0.1", () => {
   console.log(`AI Organization OS running at http://localhost:${port}`);
 });
 
-process.on("SIGINT", () => {
+const shutdown = () => {
   scheduler.stop();
-  server.close(() => process.exit(0));
-});
+  server.close(() => {
+    store.close?.();
+    process.exit(0);
+  });
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
