@@ -223,4 +223,14 @@ Add new entries under this heading with the date, change, decision, and verifica
 - Added a bounded AI CEO routine-resolution path: an internal document uncertainty with no failed criterion may be returned to fresh independent review, but the CEO cannot self-accept, change authority, or perform external actions.
 - Extended dependency handoff across the complete accepted upstream chain. Named-file questions are resumed automatically when the requested file already exists there; otherwise they remain Founder decisions.
 - Enabled Founder feedback on controlled-plan document deliveries and retained mandatory Founder control for real uncertainty, code, access, staffing, integration, external effects, and exhausted limits.
-- Verified 61 automated tests, including reviewer dependency context, transitive internal-file resolution, routine re-review, mixed uncertainty correction, and future-blocker status behavior.
+
+## 2026-09-06 — AI-selected channels and Founder registration handoff
+
+- Added just-in-time channel readiness for external tasks after their accepted dependencies are available.
+- Added a bounded provider catalog that selects Payhip for a small downloadable-product first-sale test and records alternatives, tradeoffs, retained organization work, and a freshness warning.
+- Replaced vague connector blockers with a structured Founder action limited to account registration, verification, payment readiness and provider terms.
+- Stored only a public account URL and readiness confirmations; passwords, payment credentials and API secrets are never accepted by this workflow.
+- Added an auditable manual-result fallback for providers without a scoped automation adapter. It requires a public HTTPS result, explicit Founder performance and destination checks, a hashed receipt, and an explicit not-independently-verified evidence flag.
+- Updated CEO planning instructions so an unspecified external channel receives a preceding organization-owned selection and preparation task.
+- Added Home and Project UI guidance that separates Founder-only work from AI organization responsibilities.
+- Verified 65 automated tests, including channel selection, safe registration metadata, delayed external-stage activation, outcome-evidence boundaries, and all existing workflows.

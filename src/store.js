@@ -13,6 +13,7 @@ export const EMPTY_STATE = {
   policies: [],
   accessRequests: [],
   staffingRequests: [],
+  founderActions: [],
   jobTemplates: [],
   integrationRequests: [],
   externalActions: []
@@ -40,6 +41,7 @@ export function normalizeState(input) {
   }) : [];
   state.accessRequests = Array.isArray(state.accessRequests) ? state.accessRequests : [];
   state.staffingRequests = Array.isArray(state.staffingRequests) ? state.staffingRequests : [];
+  state.founderActions = Array.isArray(state.founderActions) ? state.founderActions : [];
   state.jobTemplates = Array.isArray(state.jobTemplates) ? state.jobTemplates : [];
   state.integrationRequests = Array.isArray(state.integrationRequests) ? state.integrationRequests : [];
   state.externalActions = Array.isArray(state.externalActions) ? state.externalActions : [];

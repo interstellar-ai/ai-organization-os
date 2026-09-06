@@ -252,6 +252,7 @@ async function route(request, response) {
       return json(response, 200, organization.list("accessRequests"));
     }
     if (request.method === "GET" && url.pathname === "/api/staffing-requests") return json(response, 200, organization.list("staffingRequests"));
+    if (request.method === "GET" && url.pathname === "/api/founder-actions") return json(response, 200, organization.list("founderActions"));
     if (request.method === "GET" && url.pathname === "/api/integration-requests") return json(response, 200, organization.list("integrationRequests"));
     if (request.method === "GET" && url.pathname === "/api/external-actions") return json(response, 200, organization.list("externalActions"));
     if (request.method === "GET" && url.pathname === "/api/connectors") return json(response, 200, connectors.list());
@@ -298,6 +299,9 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "accept") return json(response, 200, organization.acceptTask(parts[2]));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "request-integration") return json(response, 201, organization.requestCodeIntegration(parts[2]));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "configure-external") return json(response, 201, organization.requestExternalAction(parts[2], await body(request), connectors));
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "manual-external-result") {
+      return json(response, 200, organization.recordManualExternalResult(parts[2], await body(request)));
+    }
     if (request.method === "POST" && url.pathname === "/api/memories") return json(response, 201, organization.writeMemory(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/assets") return json(response, 201, organization.createAsset(await body(request)));
     if (request.method === "POST" && url.pathname === "/api/job-templates/preview") {
@@ -313,6 +317,9 @@ async function route(request, response) {
     }
     if (request.method === "POST" && parts[1] === "staffing-requests" && parts[3] === "decision") {
       return json(response, 200, workflow.decideStaffingRequest(parts[2], await body(request)));
+    }
+    if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "complete") {
+      return json(response, 200, organization.completeFounderAction(parts[2], await body(request), connectors));
     }
     if (request.method === "POST" && parts[1] === "integration-requests" && parts[3] === "decision") {
       return json(response, 200, await organization.decideCodeIntegration(parts[2], await body(request), codeIntegrationExecutor));

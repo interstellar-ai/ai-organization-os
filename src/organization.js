@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import net from "node:net";
+import { recommendExternalRoute } from "./external-readiness.js";
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -76,6 +78,28 @@ function required(value, name) {
     throw new Error(`${name} is required`);
   }
   return value.trim();
+}
+
+function publicResultUrl(value, name = "public URL") {
+  let url;
+  try { url = new URL(required(value, name)); } catch { throw new Error(`${name} must be a valid URL`); }
+  const host = url.hostname.toLowerCase();
+  const privateLiteral = (() => {
+    const normalized = host.replace(/^\[|\]$/g, "");
+    if (net.isIPv4(normalized)) {
+      const [a, b] = normalized.split(".").map(Number);
+      return a === 0 || a === 10 || a === 127 || a >= 224
+        || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
+        || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+        || (a === 198 && [18, 19].includes(b));
+    }
+    return net.isIPv6(normalized) && (normalized === "::" || normalized === "::1" || /^(?:fc|fd|fe8|fe9|fea|feb)/.test(normalized));
+  })();
+  if (url.protocol !== "https:" || url.username || url.password || url.port
+    || host === "localhost" || host.endsWith(".local") || privateLiteral) {
+    throw new Error(`${name} must use public HTTPS without credentials or a custom port`);
+  }
+  return url.toString();
 }
 
 function taskCounts(tasks) {
@@ -923,6 +947,172 @@ export class Organization {
     }
   }
 
+  prepareReadyExternalTasks() {
+    const snapshot = this.store.read();
+    const candidates = snapshot.tasks.flatMap((task) => {
+      if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) return [];
+      if (task.externalReadiness?.provider) return [];
+      const waiting = (task.dependsOn || []).some((dependencyId) => {
+        const dependency = snapshot.tasks.find((item) => item.id === dependencyId);
+        return !dependency || dependency.status !== "completed"
+          || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
+      });
+      if (waiting) return [];
+      if (snapshot.founderActions.some((item) => item.taskId === task.id && ["pending", "completed"].includes(item.status))) return [];
+      if (snapshot.externalActions.some((item) => item.taskId === task.id && ["pending", "executing", "completed", "uncertain"].includes(item.status))) return [];
+      const priorSetup = snapshot.founderActions.find((item) => item.goalId === task.goalId && item.status === "completed"
+        && item.actionType === "external_account_setup");
+      if (priorSetup && /\b(validate|verify|result|sale|revenue|outcome|performance)\b/i.test(`${task.title} ${task.description}`)) {
+        return [{ task, inheritedSetup: priorSetup }];
+      }
+      const related = snapshot.tasks.filter((item) => item.goalId === task.goalId && item.taskKind === "work" && item.status === "completed");
+      const recommendation = recommendExternalRoute(task, related);
+      return recommendation ? [{ task, recommendation }] : [];
+    });
+    const created = [];
+    for (const { task, recommendation, inheritedSetup } of candidates) {
+      if (inheritedSetup) {
+        this.store.update((state) => {
+          const storedTask = state.tasks.find((item) => item.id === task.id);
+          Object.assign(storedTask, { founderActionId: inheritedSetup.id, externalIntent: "outcome_verification",
+            externalReadiness: { provider: inheritedSetup.recommendation.provider,
+              publicAccountUrl: inheritedSetup.completion.publicAccountUrl, connectorReady: false, confirmedAt: inheritedSetup.completedAt },
+            blockedReason: "The existing provider account is ready, but verified sales or outcome retrieval requires a scoped reporting adapter.",
+            nextAction: "Connect a read-only provider reporting adapter. A public product page or Founder statement alone is not proof of a sale.",
+            updatedAt: now() });
+          state.events.push({ id: id("event"), type: "external.account_reused", createdAt: now(), payload: {
+            founderActionId: inheritedSetup.id, taskId: task.id, provider: inheritedSetup.recommendation.provider,
+            purpose: "outcome_verification"
+          } });
+          this.syncGoalStatus(state, storedTask.goalId);
+          return state;
+        });
+        continue;
+      }
+      const timestamp = now();
+      const action = {
+        id: id("founder_action"), taskId: task.id, goalId: task.goalId, projectId: task.projectId,
+        actionType: "external_account_setup", owner: "Founder", status: "pending",
+        title: `Register and verify ${recommendation.provider}`, recommendation, completion: null,
+        createdAt: timestamp, updatedAt: timestamp
+      };
+      let inserted = false;
+      this.store.update((state) => {
+        if (state.founderActions.some((item) => item.taskId === task.id && ["pending", "completed"].includes(item.status))) return state;
+        state.founderActions.push(action);
+        const storedTask = state.tasks.find((item) => item.id === task.id);
+        if (storedTask) Object.assign(storedTask, {
+          founderActionId: action.id,
+          externalIntent: recommendation.connectorType,
+          blockedReason: `Founder account registration and verification are required for ${recommendation.provider}.`,
+          nextAction: `Complete the limited Founder setup checklist for ${recommendation.provider}; the AI organization retains channel analysis and publication preparation.`,
+          updatedAt: now()
+        });
+        state.events.push({ id: id("event"), type: "founder.action_requested", createdAt: now(), payload: {
+          founderActionId: action.id, taskId: task.id, actionType: action.actionType,
+          provider: recommendation.provider, connectorType: recommendation.connectorType
+        } });
+        this.syncGoalStatus(state, storedTask?.goalId);
+        inserted = true;
+        return state;
+      });
+      if (inserted) created.push(action);
+    }
+    return created;
+  }
+
+  completeFounderAction(actionId, input = {}, connectors = null) {
+    const action = this.list("founderActions").find((item) => item.id === actionId);
+    if (!action) throw new Error("Founder action not found");
+    if (action.status !== "pending") throw new Error("Founder action is already completed");
+    if (input.registrationComplete !== true || input.identityAndTermsConfirmed !== true || input.paymentReady !== true) {
+      throw new Error("Registration, required verification, terms and payment readiness must all be confirmed");
+    }
+    const publicAccountUrl = publicResultUrl(input.publicAccountUrl, "public account URL");
+    const connectorReady = Boolean(connectors?.get(action.recommendation.connectorType).status().configured);
+    this.store.update((state) => {
+      const current = state.founderActions.find((item) => item.id === actionId);
+      Object.assign(current, { status: "completed", completedAt: now(), updatedAt: now(), completion: {
+        publicAccountUrl, registrationComplete: true, identityAndTermsConfirmed: true, paymentReady: true
+      } });
+      const task = state.tasks.find((item) => item.id === action.taskId);
+      if (task) Object.assign(task, {
+        externalReadiness: { provider: action.recommendation.provider, publicAccountUrl, connectorReady, confirmedAt: now() },
+        blockedReason: connectorReady
+          ? "The provider account is ready. The AI organization must prepare the exact external action."
+          : "The provider account is ready, but no scoped provider adapter is connected. Use the auditable manual-result fallback or connect an adapter.",
+        nextAction: connectorReady
+          ? "Review the AI-prepared payload, then approve the exact external action."
+          : "The platform lacks a connected automation adapter in this MVP. Record the public result after the Founder completes the platform action, or connect a scoped adapter.",
+        updatedAt: now()
+      });
+      state.events.push({ id: id("event"), type: "founder.action_completed", createdAt: now(), payload: {
+        founderActionId: actionId, taskId: action.taskId, provider: action.recommendation.provider, connectorReady
+      } });
+      this.syncGoalStatus(state, task?.goalId);
+      return state;
+    });
+    return this.list("founderActions").find((item) => item.id === actionId);
+  }
+
+  recordManualExternalResult(taskId, input = {}) {
+    const task = this.getTask(taskId);
+    if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) throw new Error("Task is not waiting for an external result");
+    if ((task.dependsOn || []).some((dependencyId) => {
+      const dependency = this.getTask(dependencyId);
+      return dependency.status !== "completed" || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
+    })) throw new Error("Task dependencies must be accepted before recording an external result");
+    const founderAction = this.list("founderActions").find((item) => item.id === task.founderActionId && item.status === "completed");
+    if (!founderAction) throw new Error("Complete the required Founder account setup first");
+    if (founderAction.recommendation.connectorType !== "publishing" || task.externalIntent === "outcome_verification") {
+      throw new Error("Manual public-result evidence is available only for publication, not private messages, records, sales or outcome verification");
+    }
+    if (input.performedByFounder !== true || input.verifiedAtDestination !== true) {
+      throw new Error("Founder performance and destination verification must both be confirmed");
+    }
+    const publicUrl = publicResultUrl(input.publicUrl, "published result URL");
+    const provider = founderAction.recommendation.provider;
+    const timestamp = now();
+    const receiptId = id("manual_receipt");
+    const content = [
+      "# Manual External Action Record", "", `- Provider: ${provider}`, `- Public result: ${publicUrl}`,
+      `- Recorded at: ${timestamp}`, `- Receipt: ${receiptId}`,
+      "- Execution: Performed and verified by the Founder because no scoped provider adapter was connected.", "",
+      "This record proves that the Founder reported and checked the destination. It does not independently prove sales, revenue or other business outcomes."
+    ].join("\n");
+    const artifact = { filename: task.deliverable?.endsWith(".md") ? task.deliverable : "external_action_record.md", content,
+      bytes: Buffer.byteLength(content), sha256: crypto.createHash("sha256").update(content).digest("hex") };
+    const externalAction = {
+      id: id("action"), taskId, goalId: task.goalId, projectId: task.projectId, agentId: task.assignedAgentId,
+      assetId: null, connectorType: "manual", operation: founderAction.recommendation.connectorType === "publishing" ? "publish" : "complete",
+      payload: { provider, publicUrl }, preview: { provider, publicUrl }, risk: "high", status: "completed",
+      createdAt: timestamp, updatedAt: timestamp, decidedAt: timestamp, decidedBy: "Founder",
+      decisionReason: "Founder performed and verified the external action through the temporary manual fallback.",
+      result: { summary: `${provider} accepted the Founder-performed external action.`, receiptId, url: publicUrl, manual: true, artifacts: [artifact] }, error: null
+    };
+    const evidence = [{ id: id("evidence"), type: "founder_external_receipt", createdAt: timestamp,
+      summary: "The Founder reported and verified the external destination; no automated provider invocation occurred.",
+      details: { actionId: externalAction.id, provider, receiptId, url: publicUrl, independentlyVerified: false } }];
+    this.store.update((state) => {
+      if (state.externalActions.some((item) => item.taskId === taskId && ["pending", "executing", "completed", "uncertain"].includes(item.status))) {
+        throw new Error("An external result already exists for this task");
+      }
+      state.externalActions.push(externalAction);
+      const storedTask = state.tasks.find((item) => item.id === taskId);
+      Object.assign(storedTask, { status: "awaiting_review", externalActionId: externalAction.id,
+        output: { outcome: "delivered", summary: externalAction.result.summary, questions: [],
+          limitations: ["The action was performed manually and was not independently verified by a provider adapter."], artifacts: [artifact], externalReceipt: receiptId },
+        evidence, error: null, blockedReason: null, founderReviewRequired: true,
+        nextAction: "Review the public destination and accept this task before dependent work continues.", updatedAt: now() });
+      state.events.push({ id: id("event"), type: "external.manual_result_recorded", createdAt: now(), payload: {
+        actionId: externalAction.id, taskId, provider, receiptId
+      } });
+      this.syncGoalStatus(state, storedTask.goalId);
+      return state;
+    });
+    return this.getTask(taskId);
+  }
+
   requestExternalAction(taskId, input = {}, connectors) {
     const task = this.getTask(taskId);
     if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) throw new Error("Task is not waiting for an external connector");
@@ -931,6 +1121,8 @@ export class Organization {
       const dependency = this.getTask(dependencyId);
       return dependency.status !== "completed" || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
     })) throw new Error("Task dependencies must be accepted and code dependencies integrated before preparing an external action");
+    const pendingFounderAction = this.list("founderActions").find((item) => item.taskId === taskId && item.status === "pending");
+    if (pendingFounderAction) throw new Error(`Complete the Founder account setup for ${pendingFounderAction.recommendation.provider} first`);
     const connectorType = required(input.connectorType, "connector type");
     const connector = connectors.get(connectorType);
     const asset = this.list("assets").find((item) => item.id === input.assetId && item.type === "external_connector" && item.connectorType === connectorType);
@@ -1280,6 +1472,7 @@ export class Scheduler {
 
   async tick() {
     this.organization.recoverExpiredLeases();
+    this.organization.prepareReadyExternalTasks();
     const tasks = this.organization.list("tasks")
       .filter((task) => task.status === "pending" && (!task.nextAttemptAt || new Date(task.nextAttemptAt).getTime() <= Date.now()))
       .sort((a, b) => a.priority - b.priority);

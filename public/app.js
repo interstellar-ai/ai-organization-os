@@ -14,6 +14,7 @@ const state = {
   jobTemplates: [],
   accessRequests: [],
   staffingRequests: [],
+  founderActions: [],
   integrationRequests: [],
   externalActions: [],
   connectors: [],
@@ -174,8 +175,10 @@ function renderHome() {
   ];
   const deliveryReviews = founderReviewTasks();
   const planReviews = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_plan_approval");
+  const founderActions = state.founderActions.filter((action) => action.status === "pending");
   const currentStops = state.tasks.filter((task) => task.taskKind === "work"
-    && ["blocked", "failed", "needs_input"].includes(task.status) && unmetDependencies(task).length === 0);
+    && ["blocked", "failed", "needs_input"].includes(task.status) && unmetDependencies(task).length === 0
+    && !founderActions.some((action) => action.taskId === task.id));
   const completed = state.tasks.filter((task) => task.status === "completed").length;
   const evidence = state.tasks.reduce((total, task) => total + (task.evidence?.length || 0), 0);
   const decisionCount = authorityDecisions.length + deliveryReviews.length + planReviews.length;
@@ -194,6 +197,7 @@ function renderHome() {
     ...state.accessRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: `${assetById(request.assetId)?.name || "Unknown asset"} · Access change`, action: "Decide", page: "approvals" })),
     ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Decide", page: "approvals" })),
     ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: "External effect · exact payload review", action: "Decide", page: "approvals" })),
+    ...founderActions.map((request) => ({ signal: "red", title: request.title, note: "Founder-only account setup · AI selected the route", action: "Complete", taskId: request.taskId })),
     ...currentStops.map((task) => ({ signal: "red", title: task.title, note: `${taskLocation(task)} · ${taskStopReason(task)}`, action: task.status === "needs_input" ? "Reply" : "Inspect", taskId: task.id }))
   ].slice(0, 6);
   document.querySelector("#attentionList").innerHTML = attention.length
@@ -253,7 +257,8 @@ function renderWorkDelivery() {
   document.querySelector("#workDeliveryPanel").classList.toggle("hidden", !task);
   if (!task) { deliveryVersion = ""; return; }
   const version = JSON.stringify({ task, integration: state.integrationRequests.filter((item) => item.taskId === task.id),
-    external: state.externalActions.filter((item) => item.taskId === task.id), connectors: state.connectors });
+    external: state.externalActions.filter((item) => item.taskId === task.id),
+    founderActions: state.founderActions.filter((item) => item.taskId === task.id), connectors: state.connectors });
   if (version === deliveryVersion) return;
   deliveryVersion = version;
   const output = task.output || {};
@@ -293,6 +298,16 @@ function renderWorkDelivery() {
 
 function renderExternalConfiguration(task) {
   const panel = document.querySelector("#workDeliveryContent");
+  const founderAction = state.founderActions.find((item) => item.id === task.founderActionId)
+    || state.founderActions.find((item) => item.taskId === task.id && ["pending", "completed"].includes(item.status));
+  if (founderAction) {
+    const recommendation = founderAction.recommendation;
+    const alternatives = (recommendation.alternatives || []).map((item) => `<li><strong>${escapeHtml(item.provider)}</strong> — ${escapeHtml(item.tradeoff)}</li>`).join("");
+    const checklist = (recommendation.founderSteps || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    const systemSteps = (recommendation.systemSteps || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    const completion = founderAction.completion;
+    panel.insertAdjacentHTML("beforeend", `<section class="external-readiness"><div class="goal-top"><div><span class="section-kicker">AI-SELECTED CHANNEL</span><h4>${escapeHtml(recommendation.provider)}</h4></div><span class="status ${escapeHtml(founderAction.status)}">${escapeHtml(titleize(founderAction.status))}</span></div><p>${escapeHtml(recommendation.summary)}</p><a class="text-button" href="${escapeHtml(recommendation.providerUrl)}" target="_blank" rel="noreferrer">Open provider registration</a><h4>Why this route</h4><ul>${recommendation.reasons.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><details><summary>Alternatives considered</summary><ul>${alternatives}</ul></details><div class="responsibility-grid"><div><h4>Founder-only steps</h4><ul>${checklist}</ul></div><div><h4>AI organization continues</h4><ul>${systemSteps}</ul></div></div><p class="notice">${escapeHtml(recommendation.knowledgeStatus)}</p>${founderAction.status === "pending" ? `<form data-complete-founder-action="${escapeHtml(founderAction.id)}"><label>Public store or account URL<input type="url" name="publicAccountUrl" required placeholder="https://…" /></label><label class="plan-consent"><input type="checkbox" name="registrationComplete" required /> Account registration is complete.</label><label class="plan-consent"><input type="checkbox" name="identityAndTermsConfirmed" required /> Required verification and provider terms are complete.</label><label class="plan-consent"><input type="checkbox" name="paymentReady" required /> An eligible payment or delivery account is ready.</label><button class="primary-button" type="submit">Registration completed</button></form>` : `<div class="action-preview"><strong>Founder setup completed</strong><p>${escapeHtml(completion?.publicAccountUrl || "Public account confirmed")}</p><p>No password, payment credential or API secret is stored in this record.</p></div>`}</section>`);
+  }
   const current = state.externalActions.find((item) => item.id === task.externalActionId)
     || state.externalActions.find((item) => item.taskId === task.id && !["rejected", "failed"].includes(item.status));
   if (current) {
@@ -300,15 +315,22 @@ function renderExternalConfiguration(task) {
     return;
   }
   if (!["blocked", "failed"].includes(task.status)) return;
+  if (founderAction?.status === "pending") return;
   const asset = (type) => state.assets.find((item) => item.type === "external_connector" && item.connectorType === type);
   const status = (type) => state.connectors.find((item) => item.type === type);
   const badge = (type) => status(type)?.configured ? "Ready" : "Needs server configuration";
-  panel.insertAdjacentHTML("beforeend", `<section class="external-config"><h4>Choose an external tool</h4><p>Submitting creates an exact action preview. Nothing is sent until you approve that preview in Decisions.</p>
-    ${asset("web_research") ? `<details><summary>Live web research · ${escapeHtml(badge("web_research"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="web_research"><input type="hidden" name="assetId" value="${escapeHtml(asset("web_research").id)}" /><label>Research question<input name="query" placeholder="What should the employee investigate?" /></label><label>Public source URLs<textarea name="urls" placeholder="One HTTPS URL per line. Optional when web search is configured."></textarea></label><button class="secondary-button" type="submit">Prepare research action</button></form></details>` : ""}
-    ${asset("email") ? `<details><summary>Email · ${escapeHtml(badge("email"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="email"><input type="hidden" name="assetId" value="${escapeHtml(asset("email").id)}" /><label>Recipient<input name="to" type="email" required /></label><label>Subject<input name="subject" required /></label><label>Message<textarea name="text" required></textarea></label><button class="secondary-button" type="submit">Prepare email approval</button></form></details>` : ""}
-    ${asset("crm") ? `<details><summary>CRM record · ${escapeHtml(badge("crm"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="crm"><input type="hidden" name="assetId" value="${escapeHtml(asset("crm").id)}" /><label>Record type<select name="objectType"><option value="contacts">Contact</option><option value="companies">Company</option><option value="deals">Deal</option></select></label><label>Primary name<input name="primaryName" required placeholder="Person, company or deal name" /></label><label>Email, if applicable<input name="email" type="email" /></label><button class="secondary-button" type="submit">Prepare CRM approval</button></form></details>` : ""}
-    ${asset("publishing") ? `<details><summary>Publishing · ${escapeHtml(badge("publishing"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="publishing"><input type="hidden" name="assetId" value="${escapeHtml(asset("publishing").id)}" /><label>Destination<input name="destination" required placeholder="Approved channel or site" /></label><label>Title<input name="title" /></label><label>Content<textarea name="content" required></textarea></label><button class="secondary-button" type="submit">Prepare publishing approval</button></form></details>` : ""}
-  </section>`);
+  const expectedType = task.externalIntent || founderAction?.recommendation.connectorType;
+  const connectorForms = [
+    (!expectedType || expectedType === "web_research") && asset("web_research") ? `<details><summary>Live web research · ${escapeHtml(badge("web_research"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="web_research"><input type="hidden" name="assetId" value="${escapeHtml(asset("web_research").id)}" /><label>Research question<input name="query" placeholder="What should the employee investigate?" /></label><label>Public source URLs<textarea name="urls" placeholder="One HTTPS URL per line. Optional when web search is configured."></textarea></label><button class="secondary-button" type="submit">Prepare research action</button></form></details>` : "",
+    (!expectedType || expectedType === "email") && asset("email") ? `<details><summary>Email · ${escapeHtml(badge("email"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="email"><input type="hidden" name="assetId" value="${escapeHtml(asset("email").id)}" /><label>Recipient<input name="to" type="email" required /></label><label>Subject<input name="subject" required /></label><label>Message<textarea name="text" required></textarea></label><button class="secondary-button" type="submit">Prepare email approval</button></form></details>` : "",
+    (!expectedType || expectedType === "crm") && asset("crm") ? `<details><summary>CRM record · ${escapeHtml(badge("crm"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="crm"><input type="hidden" name="assetId" value="${escapeHtml(asset("crm").id)}" /><label>Record type<select name="objectType"><option value="contacts">Contact</option><option value="companies">Company</option><option value="deals">Deal</option></select></label><label>Primary name<input name="primaryName" required placeholder="Person, company or deal name" /></label><label>Email, if applicable<input name="email" type="email" /></label><button class="secondary-button" type="submit">Prepare CRM approval</button></form></details>` : "",
+    (!expectedType || expectedType === "publishing") && asset("publishing") && status("publishing")?.configured ? `<details open><summary>Publishing · Ready</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="publishing"><input type="hidden" name="assetId" value="${escapeHtml(asset("publishing").id)}" /><label>Destination<input name="destination" required value="${escapeHtml(founderAction?.completion?.publicAccountUrl || "")}" /></label><label>Title<input name="title" /></label><label>Content<textarea name="content" required></textarea></label><button class="secondary-button" type="submit">Prepare publishing approval</button></form></details>` : ""
+  ].filter(Boolean).join("");
+  const manualFallback = founderAction?.status === "completed" && expectedType !== "outcome_verification" && !status(expectedType)?.configured
+    ? `<section class="manual-fallback"><span class="section-kicker">TEMPORARY MVP FALLBACK</span><h4>Record a Founder-performed result</h4><p>The account is ready, but this provider has no scoped automation adapter. Use this only after you personally perform and verify the action. The record will be clearly marked as Founder-attested, not independently verified.</p><form data-manual-external-result="${escapeHtml(task.id)}"><label>Public result URL<input type="url" name="publicUrl" required placeholder="https://…" /></label><label class="plan-consent"><input type="checkbox" name="performedByFounder" required /> I performed this external action.</label><label class="plan-consent"><input type="checkbox" name="verifiedAtDestination" required /> I opened and verified the public destination.</label><button class="secondary-button" type="submit">Record verified result</button></form></section>` : "";
+  const verificationNotice = expectedType === "outcome_verification"
+    ? `<p class="notice">A read-only provider reporting adapter is required. A public product URL or Founder statement cannot be used as evidence of a sale or revenue.</p>` : "";
+  panel.insertAdjacentHTML("beforeend", `<section class="external-config"><h4>${expectedType ? `${escapeHtml(titleize(expectedType))} execution` : "Choose an external tool"}</h4><p>An automated connector creates an exact preview and never acts before your approval.</p>${connectorForms || `<p class="notice">No scoped ${escapeHtml(titleize(expectedType || "external"))} adapter is configured.</p>`}${verificationNotice}${manualFallback}</section>`);
 }
 
 function employeeStatus(agent) {
@@ -598,11 +620,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors"), api("/api/ceo/conversation")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/founder-actions"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors"), api("/api/ceo/conversation")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -774,13 +796,30 @@ document.querySelector("#workRequestForm").addEventListener("submit", async (eve
 
 document.querySelector("#closeWorkDelivery").addEventListener("click", () => { selectedWorkTaskId = null; renderWorkDelivery(); });
 document.querySelector("#workDeliveryContent").addEventListener("submit", async (event) => {
-  const form = event.target.closest("[data-configure-code], [data-configure-external], [data-request-integration]");
+  const form = event.target.closest("[data-configure-code], [data-configure-external], [data-request-integration], [data-complete-founder-action], [data-manual-external-result]");
   if (!form) return;
   event.preventDefault();
   const button = form.querySelector("button");
   button.disabled = true;
   try {
-    if (form.dataset.configureCode) {
+    if (form.dataset.completeFounderAction) {
+      const values = Object.fromEntries(new FormData(form));
+      await api(`/api/founder-actions/${form.dataset.completeFounderAction}/complete`, { method: "POST", body: JSON.stringify({
+        publicAccountUrl: values.publicAccountUrl,
+        registrationComplete: values.registrationComplete === "on",
+        identityAndTermsConfirmed: values.identityAndTermsConfirmed === "on",
+        paymentReady: values.paymentReady === "on"
+      }) });
+      toast("Founder account setup recorded. The AI organization can continue with the available execution route.");
+    } else if (form.dataset.manualExternalResult) {
+      const values = Object.fromEntries(new FormData(form));
+      await api(`/api/tasks/${form.dataset.manualExternalResult}/manual-external-result`, { method: "POST", body: JSON.stringify({
+        publicUrl: values.publicUrl,
+        performedByFounder: values.performedByFounder === "on",
+        verifiedAtDestination: values.verifiedAtDestination === "on"
+      }) });
+      toast("Verified external result recorded. Review and accept the evidence to continue.");
+    } else if (form.dataset.configureCode) {
       await api(`/api/tasks/${form.dataset.configureCode}/configure-code`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
       toast("Code task queued. Existing permissions will be checked before execution.");
     } else if (form.dataset.requestIntegration) {

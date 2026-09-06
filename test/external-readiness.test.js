@@ -1,0 +1,84 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { JsonStore } from "../src/store.js";
+import { Organization } from "../src/organization.js";
+
+function setup(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-org-readiness-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const organization = new Organization(new JsonStore(path.join(root, "state.json")), null);
+  const employee = organization.createAgent({ name: "Operations Lead", jobType: "operations_lead", capabilities: ["iterate"] });
+  const product = organization.createTask({ title: "Create the sellable digital product", assignedAgentId: employee.id });
+  organization.updateTask(product.id, { status: "completed", output: { outcome: "delivered", summary: "A small downloadable template kit",
+    artifacts: [{ filename: "digital_product.md", content: "# Cleaner Quote Follow-Up Mini Kit\n\nA $5 digital product with templates and a CSV tracker." }] },
+  evidence: [{ id: "evidence_product", type: "agent_delivery" }] });
+  const publish = organization.createTask({ title: "Publish through a Founder-authorized channel", assignedAgentId: employee.id,
+    executionMode: "external", status: "blocked", dependsOn: [product.id], deliverable: "publication_record.md" });
+  return { organization, product, publish };
+}
+
+test("the organization selects a channel and asks the Founder only for account setup", (t) => {
+  const { organization, publish } = setup(t);
+  const [action] = organization.prepareReadyExternalTasks();
+  assert.equal(action.taskId, publish.id);
+  assert.equal(action.recommendation.provider, "Payhip");
+  assert.equal(action.recommendation.connectorType, "publishing");
+  assert.match(action.recommendation.summary, /AI organization selected Payhip/);
+  assert.ok(action.recommendation.systemSteps.some((step) => /Finalize the customer-facing files/.test(step)));
+  assert.ok(action.recommendation.founderSteps.every((step) => !/compare|select a primary|prepare the exact product/i.test(step)));
+  assert.equal(organization.prepareReadyExternalTasks().length, 0, "readiness preparation must be idempotent");
+  assert.match(organization.getTask(publish.id).nextAction, /limited Founder setup checklist/);
+});
+
+test("registration stores only public readiness metadata and unlocks a manual receipt fallback", (t) => {
+  const { organization, publish } = setup(t);
+  const [action] = organization.prepareReadyExternalTasks();
+  assert.throws(() => organization.completeFounderAction(action.id, { publicAccountUrl: "https://payhip.com/example" }), /must all be confirmed/);
+  assert.throws(() => organization.completeFounderAction(action.id, { publicAccountUrl: "http://localhost:3333/",
+    registrationComplete: true, identityAndTermsConfirmed: true, paymentReady: true }), /public HTTPS/);
+  assert.throws(() => organization.completeFounderAction(action.id, { publicAccountUrl: "https://172.16.0.1/",
+    registrationComplete: true, identityAndTermsConfirmed: true, paymentReady: true }), /public HTTPS/);
+  const completed = organization.completeFounderAction(action.id, { publicAccountUrl: "https://payhip.com/example",
+    registrationComplete: true, identityAndTermsConfirmed: true, paymentReady: true });
+  assert.deepEqual(Object.keys(completed.completion).sort(), ["identityAndTermsConfirmed", "paymentReady", "publicAccountUrl", "registrationComplete"]);
+  assert.equal(organization.getTask(publish.id).externalReadiness.provider, "Payhip");
+  assert.throws(() => organization.recordManualExternalResult(publish.id, { publicUrl: "https://payhip.com/b/example" }), /must both be confirmed/);
+
+  const delivered = organization.recordManualExternalResult(publish.id, { publicUrl: "https://payhip.com/b/example",
+    performedByFounder: true, verifiedAtDestination: true });
+  assert.equal(delivered.status, "awaiting_review");
+  assert.equal(delivered.evidence[0].type, "founder_external_receipt");
+  assert.equal(delivered.evidence[0].details.independentlyVerified, false);
+  assert.match(delivered.output.artifacts[0].content, /does not independently prove sales/);
+  assert.equal(organization.acceptTask(publish.id).status, "completed");
+});
+
+test("future external tasks do not interrupt current work with premature registration requests", (t) => {
+  const { organization, product } = setup(t);
+  organization.updateTask(product.id, { status: "pending" });
+  assert.equal(organization.prepareReadyExternalTasks().length, 0);
+  assert.equal(organization.list("founderActions").length, 0);
+});
+
+test("a later outcome check reuses the account and never treats a public page as sales evidence", (t) => {
+  const { organization, publish } = setup(t);
+  const [action] = organization.prepareReadyExternalTasks();
+  organization.completeFounderAction(action.id, { publicAccountUrl: "https://payhip.com/example",
+    registrationComplete: true, identityAndTermsConfirmed: true, paymentReady: true });
+  organization.recordManualExternalResult(publish.id, { publicUrl: "https://payhip.com/b/example",
+    performedByFounder: true, verifiedAtDestination: true });
+  organization.acceptTask(publish.id);
+  const verify = organization.createTask({ title: "Validate the first-dollar result and review", assignedAgentId: publish.assignedAgentId,
+    executionMode: "external", status: "blocked", dependsOn: [publish.id], deliverable: "first_dollar_review.md" });
+  assert.equal(organization.prepareReadyExternalTasks().length, 0);
+  const prepared = organization.getTask(verify.id);
+  assert.equal(prepared.founderActionId, action.id);
+  assert.equal(prepared.externalIntent, "outcome_verification");
+  assert.match(prepared.blockedReason, /reporting adapter/);
+  assert.equal(organization.list("founderActions").length, 1);
+  assert.throws(() => organization.recordManualExternalResult(verify.id, { publicUrl: "https://payhip.com/b/example",
+    performedByFounder: true, verifiedAtDestination: true }), /not private messages, records, sales or outcome verification/);
+});

@@ -13,6 +13,22 @@ External tools are host-controlled capabilities, not tools available directly to
 
 Credentials stay in the server process environment. They are never returned by connector status endpoints, written to task records, exposed to model prompts, or committed to Git.
 
+## Channel selection and Founder handoff
+
+The Founder should not have to research providers or translate a business goal into integration work. When a ready external task has no action yet, the organization now:
+
+1. infers the required external capability from the approved work order;
+2. evaluates the work package against a bounded provider catalog;
+3. selects a primary route and records alternatives and tradeoffs;
+4. separates Founder-only account work from organization work; and
+5. creates a structured Founder action only when the external stage is actually ready.
+
+For a small downloadable product, the current catalog selects Payhip as the default first-sale route. This is a bounded recommendation, not a permanent global ranking. The UI shows the catalog freshness limitation, and fees, country support and provider terms must be revalidated before production use.
+
+Founder-only work is limited to account registration, identity or business verification, payment-account connection, provider terms, secret provisioning, and final approval of consequential actions. Channel comparison, listing preparation, payload construction, verification planning and follow-up remain organization responsibilities.
+
+Future CEO plans must include a preceding document task for channel selection and readiness when the provider is not already specified. This prevents an external task from becoming a vague “choose a platform” assignment to the Founder.
+
 ## Approval workflow
 
 1. An approved goal plan creates an external task in `blocked` state.
@@ -25,6 +41,12 @@ Credentials stay in the server process environment. They are never returned by c
 8. The delivery remains `awaiting_review` until the Founder accepts its evidence.
 
 Rejection never invokes a provider. An unconfigured provider cannot be approved.
+
+## Manual result fallback
+
+Some providers expose no supported product-creation API. After the Founder completes the account action, the MVP can record a manually performed external result with a public HTTPS URL and two explicit attestations: the Founder performed the action and opened the destination to verify it.
+
+The host creates a hashed Markdown receipt, records `founder_external_receipt` evidence, and moves the task to `awaiting_review`. This fallback never claims that an Agent invoked the provider and marks the result as not independently verified. It is a temporary interoperability path; a scoped provider adapter remains the preferred production route.
 
 ## Network controls
 
