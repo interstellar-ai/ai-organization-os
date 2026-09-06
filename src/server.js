@@ -10,6 +10,8 @@ import { CodexExecutor } from "./executors/codex.js";
 import { CodeIntegrationExecutor } from "./executors/integration.js";
 import { ConnectorRegistry } from "./executors/connectors.js";
 import { GeneralAgentExecutor } from "./executors/general.js";
+import { CeoChatExecutor } from "./executors/ceo-chat.js";
+import { ExecutiveChat } from "./executive-chat.js";
 import { GoalWorkflow } from "./goal-workflow.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -25,10 +27,12 @@ const codeIntegrationExecutor = new CodeIntegrationExecutor({ projectRoot });
 const connectors = new ConnectorRegistry();
 await codexExecutor.checkAvailability();
 const generalExecutor = new GeneralAgentExecutor({ runtime: codexExecutor });
+const ceoChatExecutor = new CeoChatExecutor({ runtime: codexExecutor });
 const tools = createDefaultTools(organization, { codexExecutor, generalExecutor });
 organization.tools = tools;
 const workflow = new GoalWorkflow(organization, generalExecutor, () => ({ generalAvailable: generalExecutor.status().available, codexAvailable: codexExecutor.status().available }));
 workflow.registerTool();
+const executiveChat = new ExecutiveChat(organization, ceoChatExecutor);
 const scheduler = new Scheduler(organization);
 
 function seed() {
@@ -214,9 +218,10 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/goal-ui.js") return serveStatic(response, "goal-ui.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.9.0", storage: store instanceof SqliteStore ? "sqlite-wal" : "json",
-        scheduler: "durable-leased", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status(), connectors: connectors.list() });
+        scheduler: "durable-leased", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status(), ceoChat: ceoChatExecutor.status(), connectors: connectors.list() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
+    if (request.method === "GET" && url.pathname === "/api/ceo/conversation") return json(response, 200, executiveChat.conversation());
     if (request.method === "GET" && parts[1] === "goals" && parts[3] === "summary") {
       return json(response, 200, organization.summarizeGoal(parts[2]));
     }
@@ -258,6 +263,10 @@ async function route(request, response) {
     }
     if (request.method === "GET" && url.pathname === "/api/tools") return json(response, 200, tools.list());
     if (request.method === "POST" && url.pathname === "/api/agents") return json(response, 201, organization.createAgent(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/ceo/conversation/messages") return json(response, 201, await executiveChat.send(await body(request)));
+    if (request.method === "POST" && parts[1] === "ceo" && parts[2] === "conversation" && parts[3] === "messages" && parts[5] === "create-goal") {
+      return json(response, 201, executiveChat.createGoalFromSuggestion(parts[4]));
+    }
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && ["plan", "replan"].includes(parts[3])) return json(response, 201, workflow.startPlanning(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "approve-plan") return json(response, 200, workflow.approvePlan(parts[2], await body(request)));

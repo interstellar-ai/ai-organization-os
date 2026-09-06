@@ -8,6 +8,7 @@ export const EMPTY_STATE = {
   tasks: [],
   memories: [],
   events: [],
+  ceoMessages: [],
   assets: [],
   policies: [],
   accessRequests: [],
@@ -25,6 +26,11 @@ export function normalizeState(input) {
   state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
   state.memories = Array.isArray(state.memories) ? state.memories : [];
   state.events = Array.isArray(state.events) ? state.events : [];
+  state.ceoMessages = Array.isArray(state.ceoMessages) ? state.ceoMessages.map((message) => ({
+    suggestedAction: null,
+    createdAt: null,
+    ...message
+  })) : [];
   state.assets = Array.isArray(state.assets) ? state.assets : [];
   state.policies = Array.isArray(state.policies) ? state.policies.map((policy) => {
     if (policy.name === "Public publishing requires explicit grant" && policy.effect === "deny") {

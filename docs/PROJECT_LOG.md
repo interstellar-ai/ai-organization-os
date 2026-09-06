@@ -204,3 +204,11 @@ Add new entries under this heading with the date, change, decision, and verifica
 - Approval atomically creates one template-based employee; rejection creates none. Neither decision grants temporary or project-specific access.
 - Automatically queued CEO replanning after every request in the current staffing proposal is decided. Stale, repeated and direct work-plan approval attempts fail closed.
 - Added automated coverage for approval, rejection, template inheritance, duplicate-decision protection and the staffing-to-replanning-to-work-plan transition.
+
+## 2026-09-06 — AI CEO executive conversation
+
+- Replaced the one-shot Home intake with a persistent Founder-to-CEO conversation for progress reports, strategic discussion, questions, and optional goal suggestions.
+- Added a host-generated, timestamped snapshot covering organization capacity, goals, projects, active tasks, blockers, evidence counts, and pending approvals. The CEO receives no raw assets, files, private memories, credentials, or external-tool access.
+- Kept conversation non-executing: it may only record messages and audit events. A suggested goal requires an explicit Founder click before creating a goal and separately requesting a plan.
+- Added a dedicated read-only Codex executor with web search, shell, browser, plugins, MCP, and other local tools disabled.
+- Added automated coverage for snapshot grounding, message persistence, non-execution, explicit goal creation, provider-contract validation, and tool disablement.

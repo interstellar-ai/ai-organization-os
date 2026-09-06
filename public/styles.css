@@ -85,6 +85,27 @@ button { color: inherit; }
 .conversation-copy strong, .conversation-copy span { display: block; }
 .conversation-copy strong { font-size: 13px; }
 .conversation-copy span { margin-top: 3px; color: var(--faint); font-size: 11px; }
+.ceo-conversation { display: grid; gap: 13px; max-height: 480px; overflow: auto; padding: 2px 2px 2px 0; }
+.ceo-message, .ceo-empty { display: flex; gap: 10px; align-items: flex-start; }
+.ceo-message.founder { flex-direction: row-reverse; }
+.speaker.ceo { background: #e8efe5; color: var(--green); }
+.ceo-message-body { max-width: min(86%, 700px); padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; background: #f7f9f4; }
+.ceo-message.founder .ceo-message-body { background: var(--green); border-color: var(--green); color: white; }
+.ceo-message-body p { margin: 7px 0 0; white-space: pre-wrap; color: inherit; line-height: 1.55; }
+.ceo-message-meta { display: flex; justify-content: space-between; gap: 14px; font-size: 11px; }
+.ceo-message-meta span, .ceo-message-body small { color: var(--faint); font-size: 10px; }
+.ceo-message.founder .ceo-message-meta span { color: rgba(255,255,255,.7); }
+.ceo-message-body small { display: block; margin-top: 8px; }
+.ceo-empty { padding: 16px 0 18px; border-top: 1px solid var(--line); }
+.ceo-empty strong { display: block; font-size: 13px; }
+.ceo-empty p { margin-top: 4px; color: var(--faint); font-size: 12px; line-height: 1.5; }
+.ceo-suggestion { margin-top: 12px; padding: 11px; border-radius: 10px; background: rgba(255,255,255,.7); color: var(--ink); }
+.ceo-suggestion p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.ceo-suggestion span { display: block; margin-top: 8px; color: var(--green); font-size: 11px; font-weight: 700; }
+.ceo-suggestion .secondary-button { margin-top: 10px; background: white; }
+.ceo-composer { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.ceo-composer > label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; }
+.ceo-boundary { margin-top: 10px !important; color: var(--faint) !important; font-size: 10px; line-height: 1.45 !important; }
 textarea, input, select { width: 100%; border: 1px solid var(--line-strong); border-radius: 11px; outline: none; background: #fff; color: var(--ink); transition: border .18s, box-shadow .18s; }
 textarea:focus, input:focus, select:focus { border-color: #76a187; box-shadow: 0 0 0 3px rgba(35,107,75,.09); }
 textarea { min-height: 100px; padding: 12px 13px; resize: vertical; }

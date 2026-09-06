@@ -20,7 +20,7 @@ const state = {
   employeeView: "directory",
   accessTab: "employees",
   selectedAssetId: null,
-  pendingIntent: null
+  ceoConversation: null
 };
 let selectedWorkTaskId = null;
 let deliveryVersion = "";
@@ -113,7 +113,27 @@ function goalCard(goal) {
   </article>`;
 }
 
+function renderCeoConversation() {
+  const container = document.querySelector("#ceoConversation");
+  const conversation = state.ceoConversation;
+  if (!conversation) {
+    container.innerHTML = empty("Loading CEO conversation…");
+    return;
+  }
+  const messages = conversation.messages || [];
+  const runtime = conversation.runtime || state.health?.ceoChat;
+  const unavailable = runtime && !runtime.available;
+  container.innerHTML = `${messages.length ? messages.map((message) => {
+    const ceo = message.role === "ceo";
+    const action = message.suggestedAction;
+    const used = action?.createdGoalId;
+    return `<article class="ceo-message ${ceo ? "ceo" : "founder"}"><div class="speaker ${ceo ? "ceo" : "founder"}">${ceo ? "C" : "F"}</div><div class="ceo-message-body"><div class="ceo-message-meta"><strong>${ceo ? "AI CEO" : "Founder"}</strong><span>${escapeHtml(formatTime(message.createdAt))}</span></div><p>${escapeHtml(message.content)}</p>${ceo && message.snapshotAt ? `<small>Based on the organization snapshot at ${escapeHtml(formatTime(message.snapshotAt))}.</small>` : ""}${action?.type === "propose_goal" ? `<div class="ceo-suggestion"><strong>Suggested goal: ${escapeHtml(action.title)}</strong><p>${escapeHtml(action.description)}</p>${used ? `<span>Goal created</span>` : `<button type="button" class="secondary-button" data-ceo-create-goal="${escapeHtml(message.id)}">Create goal and request CEO plan</button>`}</div>` : ""}</div></article>`;
+  }).join("") : `<div class="ceo-empty"><div class="speaker ceo">C</div><div><strong>Your executive conversation is ready.</strong><p>Ask for progress, discuss a decision, or explore a new idea. The CEO will only suggest work; you remain the person who confirms it.</p></div></div>`}${unavailable ? `<p class="notice">CEO conversation is unavailable: ${escapeHtml(runtime.reason || "runtime not ready")}</p>` : ""}`;
+  document.querySelector("#ceoChatSendButton").disabled = Boolean(unavailable);
+}
+
 function renderHome() {
+  renderCeoConversation();
   const pending = [
     ...state.staffingRequests.filter((request) => request.status === "pending"),
     ...state.accessRequests.filter((request) => request.status === "pending"),
@@ -145,7 +165,7 @@ function renderHome() {
     : `<div class="attention-item"><i class="attention-signal green"></i><div><strong>No urgent decisions</strong><span>The organization has no pending approval or blocked workflow.</span></div><b>Clear</b></div>`;
   document.querySelector("#homeGoalList").innerHTML = state.goalSummaries.length
     ? state.goalSummaries.slice().reverse().slice(0, 4).map(goalCard).join("")
-    : empty("No goals yet. Begin with a Founder command above.");
+    : empty("No goals yet. Start by talking with the AI CEO above.");
 }
 
 function renderGoals() { goalUI.renderGoals(); }
@@ -522,11 +542,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors"), api("/api/ceo/conversation")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -534,47 +554,29 @@ async function refreshData({ quiet = false } = {}) {
   }
 }
 
-function analyzeFounderIntent() {
-  const input = document.querySelector("#founderCommand").value.trim();
-  if (!input) return toast("Describe an idea or outcome first.", true);
-  const lower = input.toLowerCase();
-  const externalSignals = ["publish", "post", "email", "send", "deploy", "delete", "buy", "sell", "spend", "payment"].filter((word) => {
-    const index = lower.indexOf(word);
-    if (index < 0) return false;
-    const context = lower.slice(Math.max(0, index - 24), Math.min(lower.length, index + word.length + 24));
-    const wordIndex = context.indexOf(word);
-    const before = context.slice(0, wordIndex);
-    const after = context.slice(wordIndex + word.length).trim();
-    const negatedBefore = /(?:do not|don't|never|without|no|disable|disabled|forbid|forbidden)[^.!?]{0,20}$/.test(before);
-    const negatedAfter = /^(?:ing\s+)?(?:is\s+)?(?:disabled|forbidden|not allowed|blocked)/.test(after);
-    return !negatedBefore && !negatedAfter;
-  });
-  const type = /change|update|revise|replace|pause|stop/.test(lower) ? "Change request" : /\?$|how|what|why/.test(lower) ? "Discussion" : "Goal proposal";
-  const risk = externalSignals.length ? "Founder confirmation required" : "Internal and reversible";
-  state.pendingIntent = { input, externalSignals, type, risk };
-  document.querySelector("#intentBrief").innerHTML = `<div class="panel-heading compact"><div><span class="section-kicker">INTAKE PREVIEW</span><h3>${escapeHtml(type)}</h3></div><span class="status ${externalSignals.length ? "pending" : "completed"}">${externalSignals.length ? "Confirmation gate" : "Ready to plan"}</span></div><div class="intent-brief-grid"><div class="brief-field"><span>Objective</span><strong>${escapeHtml(input)}</strong></div><div class="brief-field"><span>Execution boundary</span><strong>${escapeHtml(risk)}</strong></div><div class="brief-field"><span>Assumption</span><strong>Use the local organization, current employee roster and evidence-backed tools.</strong></div><div class="brief-field"><span>External actions detected</span><strong>${escapeHtml(externalSignals.join(", ") || "None")}</strong></div></div><p>This preview uses local rules. Confirm to ask the AI CEO to propose projects and employee tasks, or ask clarifying questions. Work starts only after plan approval. External actions are not enabled.</p><div class="brief-actions"><button class="secondary-button" id="editIntentButton">Continue editing</button><button class="primary-button" id="launchIntentButton">Confirm and send to AI CEO</button></div>`;
-  document.querySelector("#intentBrief").classList.remove("hidden");
-}
-
-async function launchIntent() {
-  if (!state.pendingIntent) return;
-  const button = document.querySelector("#launchIntentButton");
+async function sendCeoMessage() {
+  const input = document.querySelector("#ceoChatMessage");
+  const button = document.querySelector("#ceoChatSendButton");
+  const message = input.value.trim();
+  if (!message) return toast("Write a message for the AI CEO first.", true);
   button.disabled = true;
   try {
-    const sentence = state.pendingIntent.input.split(/[.!?\n]/).find(Boolean)?.trim() || state.pendingIntent.input;
-    const title = truncate(sentence, 72);
-    const goal = await api("/api/goals", { method: "POST", body: JSON.stringify({ title, description: state.pendingIntent.input }) });
+    await api("/api/ceo/conversation/messages", { method: "POST", body: JSON.stringify({ message }) });
+    input.value = "";
+    await refreshData({ quiet: true });
+    document.querySelector("#ceoConversation").scrollTop = document.querySelector("#ceoConversation").scrollHeight;
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+}
+
+async function createGoalFromCeoMessage(messageId) {
+  try {
+    const goal = await api(`/api/ceo/conversation/messages/${messageId}/create-goal`, { method: "POST", body: "{}" });
     await api(`/api/goals/${goal.id}/plan`, { method: "POST", body: "{}" });
-    document.querySelector("#founderCommand").value = "";
-    document.querySelector("#intentBrief").classList.add("hidden");
-    state.pendingIntent = null;
-    toast("Goal saved. The CEO will propose a plan for your confirmation.");
+    toast("Goal created. The CEO is preparing a plan for your confirmation.");
     await refreshData({ quiet: true });
     goalUI.openGoal(goal.id);
-  } catch (error) {
-    toast(error.message, true);
-    button.disabled = false;
-  }
+  } catch (error) { toast(error.message, true); }
 }
 
 async function decideRequest(requestId, decision, grantType = "once") {
@@ -635,6 +637,8 @@ document.addEventListener("click", (event) => {
   if (decision) decideRequest(decision.dataset.requestId, decision.dataset.accessDecision, decision.dataset.grantType || "once");
   const hireTemplate = event.target.closest("[data-hire-template]");
   if (hireTemplate) openHireForm(hireTemplate.dataset.hireTemplate);
+  const ceoGoal = event.target.closest("[data-ceo-create-goal]");
+  if (ceoGoal) createGoalFromCeoMessage(ceoGoal.dataset.ceoCreateGoal);
   const closeForm = event.target.closest("[data-close-form]");
   if (closeForm) document.querySelector(`#${closeForm.dataset.closeForm}`).classList.add("hidden");
 });
@@ -644,11 +648,7 @@ document.querySelector("#sidebarBackdrop").addEventListener("click", () => setSi
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && document.querySelector("#sidebar").classList.contains("open")) setSidebarOpen(false);
 });
-document.querySelector("#analyzeCommandButton").addEventListener("click", analyzeFounderIntent);
-document.querySelector("#intentBrief").addEventListener("click", (event) => {
-  if (event.target.closest("#launchIntentButton")) launchIntent();
-  if (event.target.closest("#editIntentButton")) document.querySelector("#intentBrief").classList.add("hidden");
-});
+document.querySelector("#ceoChatForm").addEventListener("submit", (event) => { event.preventDefault(); sendCeoMessage(); });
 document.querySelectorAll("[data-employee-view]").forEach((button) => button.addEventListener("click", () => {
   state.employeeView = button.dataset.employeeView;
   document.querySelectorAll("[data-employee-view]").forEach((item) => item.classList.toggle("active", item === button));

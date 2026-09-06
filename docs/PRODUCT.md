@@ -4,6 +4,8 @@
 
 AI Organization OS is an operating layer for a small AI-native organization. It turns a human-level objective into a permissioned workflow of agents, tasks, tools, memory, evidence, and human-approved actions.
 
+The Founder’s primary interface is a persistent conversation with the AI CEO. The CEO can explain the current organization state, discuss options, surface decisions, and suggest new goals, while only explicit Founder confirmation enters the planning and execution system.
+
 The product is not intended to be a chatbot that only answers questions. It should help one person coordinate a small AI organization while retaining strategic control over consequential decisions.
 
 ## Core product loop
@@ -79,6 +81,7 @@ This workflow is the initial validation of the general operating model. It must 
 The current version provides:
 
 - Agent registration with roles and capabilities;
+- Persistent Founder-to-CEO conversation backed by timestamped host-generated operational snapshots, with no tool or mutation authority;
 - Goal creation;
 - Model-backed CEO planning with clarification, bounded project/task proposals, dependency validation, and explicit Founder confirmation;
 - CEO detection of missing roles, bounded template-based staffing proposals, explicit Founder decisions, and automatic replanning against the updated roster;
@@ -115,7 +118,7 @@ The current version provides:
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning for CEO planning, staffing proposals, general document work, independent review, final reporting, and software development. Home starts CEO planning; the Founder reviews staffing in Approvals or reviews the complete work proposal and autonomy budget in Goals before projects and delivery tasks are created. Approved hires must use existing job templates and trigger replanning; no employee can self-create or bypass access policy. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, autonomous job-template creation, standing staffing budgets, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
+The current version uses real model reasoning for CEO conversation and planning, staffing proposals, general document work, independent review, final reporting, and software development. Home is the CEO conversation surface: it supplies a timestamped host-generated operational summary, persists the discussion, and permits a Founder-confirmed goal suggestion, but grants no tools or mutation authority. The Founder reviews staffing in Approvals or reviews the complete work proposal and autonomy budget in Goals before projects and delivery tasks are created. Approved hires must use existing job templates and trigger replanning; no employee can self-create or bypass access policy. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, autonomous job-template creation, standing staffing budgets, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [CEO conversation](CEO_CONVERSATION.md), [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
 
 ## Task state semantics
 

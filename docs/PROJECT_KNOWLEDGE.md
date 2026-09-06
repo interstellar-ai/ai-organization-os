@@ -5,6 +5,7 @@ This directory separates stable product knowledge from changing project notes.
 ## Read the right document
 
 - [Product document](PRODUCT.md): product purpose, principles, current scope, state semantics, and roadmap.
+- [CEO conversation](CEO_CONVERSATION.md): Founder-to-CEO discussion, progress reporting, suggestion confirmation, and hard conversation boundaries.
 - [General Agent execution](GENERAL_AGENT_EXECUTION.md): current provider contract, delivery workflow, safety limits, and next iterations.
 - [Goal-to-project planning](GOAL_PLANNING.md): CEO clarification, proposal confirmation, real projects, employee tasks, and accepted handoffs.
 - [Controlled autonomy](CONTROLLED_AUTONOMY.md): automatic document review, bounded revision and retry, model-run budgets, escalation, and final reporting.

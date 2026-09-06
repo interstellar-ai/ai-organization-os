@@ -35,14 +35,12 @@
       </header>
 
       <section class="page active" data-page-panel="home">
-        <div class="welcome-row"><div><span class="eyebrow">FOUNDER BRIEF</span><h2>Turn intent into accountable execution.</h2><p>Speak naturally. The local CEO intake will structure your idea before work begins.</p></div><div class="date-card"><span id="todayLabel">Today</span><strong id="todayDate">—</strong></div></div>
+        <div class="welcome-row"><div><span class="eyebrow">FOUNDER + AI CEO</span><h2>Run the organization through one executive conversation.</h2><p>Discuss progress, decisions and ideas. Nothing starts until you explicitly confirm it.</p></div><div class="date-card"><span id="todayLabel">Today</span><strong id="todayDate">—</strong></div></div>
         <div class="home-layout">
           <article class="panel command-panel">
-            <div class="panel-heading"><div><span class="section-kicker">FOUNDER → AI CEO</span><h3>What should the organization work on?</h3></div><span class="mode-badge">Structured local intake</span></div>
-            <div class="conversation-line"><div class="speaker founder">F</div><div class="conversation-copy"><strong>Founder command</strong><span>Ideas, goals, changes and questions can begin here.</span></div></div>
-            <textarea id="founderCommand" class="command-input" placeholder="Example: Build the first usable Founder Command Center with employee and access views. Keep external actions disabled."></textarea>
-            <div class="command-footer"><div class="command-hints"><span>Idea</span><span>Goal</span><span>Command</span><span>Change</span></div><button id="analyzeCommandButton" class="primary-button">Review with AI CEO <span>→</span></button></div>
-            <div id="intentBrief" class="intent-brief hidden"></div>
+            <div class="panel-heading"><div><span class="section-kicker">FOUNDER → AI CEO</span><h3>Executive conversation</h3></div><span class="mode-badge">Read-only organization context</span></div>
+            <div id="ceoConversation" class="ceo-conversation"><div class="empty-state small">Loading CEO conversation…</div></div>
+            <form id="ceoChatForm" class="ceo-composer"><label for="ceoChatMessage">Message the AI CEO</label><textarea id="ceoChatMessage" name="message" class="command-input" maxlength="12000" placeholder="Examples: What is blocking the organization? What has the Product Manager completed? Should we focus on this idea next?"></textarea><div class="command-footer"><div class="command-hints"><span>Progress</span><span>Decision</span><span>Idea</span><span>Question</span></div><button id="ceoChatSendButton" class="primary-button" type="submit">Send to AI CEO <span>→</span></button></div><p class="ceo-boundary">The CEO receives a timestamped organization summary. Conversation cannot execute work, change access or contact external systems.</p></form>
           </article>
           <aside class="panel attention-panel"><div class="panel-heading compact"><div><span class="section-kicker">ACTION CENTER</span><h3>Needs your attention</h3></div><button class="text-button" data-page-link="approvals">View all</button></div><div id="attentionList" class="attention-list"><div class="empty-state small">Loading organization state…</div></div></aside>
         </div>
