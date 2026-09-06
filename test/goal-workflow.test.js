@@ -95,6 +95,7 @@ test("goal proposal materializes projects only on approval and delivers through 
   const flowReview = org.list("tasks").find((task) => task.reviewTargetTaskId === flows.id);
   responses.push(quality(flows.acceptanceCriteria));
   await org.executeTask(flowReview.id);
+  assert.match(calls[4], /Unique accepted product requirements/, "the reviewer must receive accepted dependency artifacts");
   assert.equal(org.getTask(flows.id).status, "completed");
   let summary = org.summarizeGoal(goal.id);
   assert.equal(summary.executionStatus, "reporting");
@@ -310,6 +311,104 @@ test("controlled autonomy revises failed document work and accepts a corrected d
   assert.equal(revised.status, "completed");
   assert.equal(revised.acceptanceMode, "independent_quality_review");
   assert.equal(org.summarizeGoal(goal.id).executionStatus, "reporting");
+});
+
+test("the CEO can return a low-risk uncertainty to independent review without accepting it", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery, quality } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  responses.push(delivery("brief.md", "A usable internal delivery"));
+  await org.executeTask(work.id);
+  const firstReview = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id);
+  responses.push(delivery("review.json", JSON.stringify({
+    verdict: "escalate",
+    summary: "One internal reference was not visible to the reviewer",
+    confidence: 0.9,
+    checks: work.acceptanceCriteria.map((criterion) => ({ criterion, status: "uncertain", evidence: "The internal reference was not supplied" })),
+    feedback: ["Repeat the review with the accepted internal context."]
+  })));
+  await org.executeTask(firstReview.id);
+  assert.equal(org.getTask(work.id).status, "awaiting_review");
+  const retried = workflow.retryRoutineReview(work.id);
+  assert.equal(retried.task.status, "awaiting_quality_review");
+  assert.notEqual(retried.review.id, firstReview.id);
+  responses.push(quality(work.acceptanceCriteria));
+  await org.executeTask(retried.review.id);
+  assert.equal(org.getTask(work.id).status, "completed");
+  assert.ok(org.list("events").some((event) => event.type === "task.routine_review_retried"));
+});
+
+test("a mixed uncertainty and fixable internal failure is revised before Founder escalation", async (t) => {
+  const { org, workflow, goal, plan, propose, responses, delivery } = setup(t);
+  const value = plan();
+  value.projects = [];
+  value.tasks = [{ ...value.tasks[0], projectKey: null,
+    acceptanceCriteria: ["Internal reference is consistent", "Action list is minimal"] }];
+  const proposal = await propose(value);
+  const [work] = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }).tasks;
+  responses.push(delivery("brief.md", "A delivery with one correctable list item"));
+  await org.executeTask(work.id);
+  const review = org.list("tasks").find((task) => task.reviewTargetTaskId === work.id);
+  responses.push(delivery("review.json", JSON.stringify({
+    verdict: "escalate",
+    summary: "One reference is uncertain and one list item is fixable",
+    confidence: 0.9,
+    checks: [
+      { criterion: "Internal reference is consistent", status: "uncertain", evidence: "The reference was not visible" },
+      { criterion: "Action list is minimal", status: "fail", evidence: "One post-delivery duty is included" }
+    ],
+    feedback: ["Move the post-delivery duty out of the action list."]
+  })));
+  await org.executeTask(review.id);
+  const revised = org.getTask(work.id);
+  assert.equal(revised.status, "pending");
+  assert.equal(revised.autoRevisionCount, 1);
+  assert.match(revised.messages.at(-1).content, /post-delivery duty/);
+  assert.equal(revised.founderReviewRequired, false);
+});
+
+test("future blocked work does not hide the active project stage", async (t) => {
+  const { org, workflow, goal, plan, propose } = setup(t);
+  const value = plan();
+  value.projects = [{ key: "launch", title: "Launch", objective: "Prepare then publish", successCriteria: ["Package ready"] }];
+  value.tasks = value.tasks.map((task) => ({ ...task, projectKey: "launch" }));
+  const proposal = await propose(value);
+  const accepted = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
+  org.updateTask(accepted.tasks[1].id, { status: "blocked", blockedReason: "A future connector is not configured." });
+  const project = workflow.summarizeProject(accepted.projects[0].id);
+  assert.equal(project.progress.status, "in_progress");
+  assert.deepEqual(project.progress.futureBlockerIds, [accepted.tasks[1].id]);
+  assert.deepEqual(project.progress.currentBlockerIds, []);
+});
+
+test("the CEO resumes a document when requested files exist in the accepted transitive dependency chain", async (t) => {
+  const { org, workflow, goal, plan, propose, product } = setup(t);
+  const value = plan();
+  value.projects = [{ key: "delivery", title: "Delivery", objective: "Build and review", successCriteria: ["Reviewed"] }];
+  value.tasks = [
+    { ...value.tasks[0], projectKey: "delivery" },
+    { ...value.tasks[1], projectKey: "delivery" },
+    { key: "final", projectKey: "delivery", title: "Final review", workType: "product_strategy", executionMode: "document",
+      assignedAgentId: product.id, instructions: "Review the complete chain", deliverable: "final.md",
+      acceptanceCriteria: ["All upstream decisions are covered"], dependsOn: ["flows"] }
+  ];
+  const proposal = await propose(value);
+  const accepted = workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true });
+  const [brief, flows, final] = accepted.tasks;
+  const artifact = (filename, content) => ({ filename, content, sha256: `${filename}-hash`, bytes: content.length });
+  org.updateTask(brief.id, { status: "completed", output: { outcome: "delivered", summary: "Brief", artifacts: [artifact("brief.md", "Brief content")] }, evidence: [{ id: "brief-evidence" }] });
+  org.updateTask(flows.id, { status: "completed", output: { outcome: "delivered", summary: "Flows", artifacts: [artifact("flows.md", "Flow content")] }, evidence: [{ id: "flow-evidence" }] });
+  org.updateTask(final.id, { status: "needs_input", output: { outcome: "needs_input", summary: "Need the original brief",
+    questions: ["Please supply brief.md so I can complete the review."], limitations: [], artifacts: [] }, evidence: [{ id: "question-evidence" }] });
+  const deliveries = workflow.dependencyContext(org.getTask(final.id));
+  assert.deepEqual(deliveries.flatMap((delivery) => delivery.artifacts.map((item) => item.filename)), ["flows.md", "brief.md"]);
+  const resumed = workflow.tryResolveRoutineInput(org.getTask(final.id));
+  assert.equal(resumed.status, "pending");
+  assert.match(resumed.messages.at(-1).content, /brief\.md/);
+  assert.ok(org.list("events").some((event) => event.type === "task.routine_input_resolved"));
 });
 
 test("model-run budget exhaustion escalates to the Founder and an approved extension resumes it", async (t) => {

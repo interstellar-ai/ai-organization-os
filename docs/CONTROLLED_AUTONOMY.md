@@ -13,7 +13,7 @@ approved work → employee delivery → independent review
   → escalate: Founder decision
 ```
 
-The host, not the model, enforces task identity, dependencies, reviewer separation, policy access, retry limits, revision limits, and model-run budget. The reviewer receives only the work order, acceptance criteria, and returned artifacts. Embedded artifact text is treated as untrusted content.
+The host, not the model, enforces task identity, dependencies, reviewer separation, policy access, retry limits, revision limits, and model-run budget. The reviewer receives the work order, acceptance criteria, returned artifacts, and only those dependency deliveries that were already accepted under the same approved plan. Embedded artifact text is treated as untrusted content.
 
 ## Approval boundary
 
@@ -31,9 +31,13 @@ It does not approve external actions, new assets, new permissions, code integrat
 
 ## Quality decisions
 
-An independent employee with the `validate` capability reviews every acceptance criterion in order. A pass requires every criterion to pass and confidence of at least 0.7. A revision requires a concrete failed criterion and actionable feedback. Uncertainty must escalate.
+An independent employee with the `validate` capability reviews every acceptance criterion in order. A pass requires every criterion to pass and confidence of at least 0.7. A revision requires a concrete failed criterion and actionable feedback. When a review contains both uncertainty and a concrete fixable failure, the system applies the bounded correction first; unresolved uncertainty escalates only after the corrected delivery is reviewed again.
 
 A passing review marks the document task complete and unlocks its approved dependencies. A failed review returns the original task to the same employee with reviewer feedback while preserving the previous delivery, evidence, and review in execution history. After two automatic revisions, or when a reviewer is unavailable or uncertain, the task moves to Founder review.
+
+Routine internal uncertainty may be returned by the AI CEO to a fresh independent review when the previous review contains no failed criterion and the action grants no permission or external authority. The CEO never accepts its own work: the independent reviewer must still pass every criterion with sufficient confidence. Founder decisions remain mandatory for genuine judgment calls, unresolved or external facts, exhausted limits, code, hiring, access, integration, publication, sending, spending, deployment, and other side effects.
+
+Accepted dependency context includes the complete upstream chain within the same approved plan, not only the immediately preceding task. When an employee asks for a named internal file that already exists in that accepted chain, the host may let the AI CEO supply it and resume the task automatically. A question that cannot be resolved from those accepted files remains a Founder decision.
 
 Review tasks and final reports are coordination work. They remain visible in the task list and audit log but do not inflate delivery progress, which counts only original plan work.
 

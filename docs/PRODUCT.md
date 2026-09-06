@@ -38,13 +38,15 @@ The organization combines persistent management and review roles with specialist
 
 ## Confirmed target interface
 
-The target interface is a multi-page Founder operating console rather than a single technical dashboard. Its primary areas are Home, Goals, Projects, Employees, Access, Approvals, Knowledge, Reports, Audit, and Settings.
+The target interface is a multi-page Founder operating console rather than a single technical dashboard. Its primary areas are Home, Goals, Projects, Employees, Access, Decisions, Knowledge, Reports, Audit, and Settings.
 
 Home is the Founder Command Center. Employees supports both directory and organization-chart views over the same employee records.
 
 Projects is a general delivery workspace rather than a coding console. The Founder describes a desired outcome, deliverable, context, constraints, acceptance criteria, priority, and optional goal. The system classifies the work, routes it to the appropriate employee, and selects an approved executor. Coding is one specialization whose current provider is Codex; it is not a top-level product concept.
 
-Goals owns CEO clarification, plan proposals, and Founder confirmation. Projects now contains real project records created from approved plans, with objectives, coordinators, success criteria, tasks, and aggregate delivery progress. Simple goals may use direct tasks. Standalone work requests remain available without inventing a project.
+Goals owns CEO clarification, plan proposals, and Founder confirmation. Projects contains real project records created from approved plans, but presents them as an operating pipeline rather than a flat task dump: the current stage, Founder decisions, active work, downstream work, current blockers, later requirements, completed work, and collapsed system-review activity are separated. A project is not labeled blocked merely because a later stage has a known missing connector while current work can still proceed. Simple goals may use direct tasks. Standalone work requests remain available without inventing a project.
+
+Decisions replaces the former approval-only view. It combines Founder delivery judgment and employee questions with goal-plan, staffing, access, code-integration, and exact external-action decisions. Routine internal drafting, retry, revision, complete accepted dependency-chain handoff, resolvable internal questions, and evidence-backed independent acceptance remain under controlled autonomy and do not create Founder noise.
 
 The Access area provides five connected views:
 
@@ -93,7 +95,7 @@ The current version provides:
 - Basic memory search and write operations;
 - A small allowlisted tool registry;
 - A local HTTP API and browser dashboard;
-- A multi-page Founder Command Center with Goals, Projects, Employees, Access, Approvals, Knowledge, Reports, Audit, and Settings views;
+- A multi-page Founder Command Center with Goals, Projects, Employees, Access, Decisions, Knowledge, Reports, Audit, and Settings views;
 - A deterministic local Founder-intent brief before goal creation;
 - A seeded AI Software Product Studio employee roster;
 - Employee directory and organization-chart views with role profiles and assigned work;
@@ -118,7 +120,7 @@ The current version provides:
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning for CEO conversation and planning, staffing proposals, general document work, independent review, final reporting, and software development. Home is the CEO conversation surface: it supplies a timestamped host-generated operational summary, persists the discussion, and permits a Founder-confirmed goal suggestion, but grants no tools or mutation authority. The Founder reviews staffing in Approvals or reviews the complete work proposal and autonomy budget in Goals before projects and delivery tasks are created. Approved hires must use existing job templates and trigger replanning; no employee can self-create or bypass access policy. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, autonomous job-template creation, standing staffing budgets, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [CEO conversation](CEO_CONVERSATION.md), [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
+The current version uses real model reasoning for CEO conversation and planning, staffing proposals, general document work, independent review, final reporting, and software development. Home is the CEO conversation surface: it supplies a timestamped host-generated operational summary, persists the discussion, and permits a Founder-confirmed goal suggestion, but grants no tools or mutation authority. Founder-only work is collected in Decisions, while the complete work proposal and autonomy budget remain in Goals before projects and delivery tasks are created. Approved hires must use existing job templates and trigger replanning; no employee can self-create or bypass access policy. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, autonomous job-template creation, standing staffing budgets, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [CEO conversation](CEO_CONVERSATION.md), [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
 
 ## Task state semantics
 

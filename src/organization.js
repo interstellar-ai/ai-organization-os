@@ -812,7 +812,11 @@ export class Organization {
   resumeGeneralTask(taskId, input = {}, options = {}) {
     const task = this.getTask(taskId);
     if (task.executionMode === "external") throw new Error("External work requires an approved connector; document retry cannot perform it");
-    if (task.workType === "software_development" || task.requestSource !== "founder_work_request") throw new Error("Only general work requests support this action");
+    const controlledPlanDocument = Boolean(task.planId && task.taskKind === "work" && task.executionMode === "document"
+      && this.getGoal(task.goalId).autonomyPolicy?.mode === "controlled");
+    if (task.workType === "software_development" || (task.requestSource !== "founder_work_request" && !controlledPlanDocument)) {
+      throw new Error("Only general work requests and controlled plan documents support this action");
+    }
     if (!["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)) throw new Error("Task is not waiting for feedback or retry");
     const message = typeof input.message === "string" ? input.message.trim() : "";
     if (["needs_input", "awaiting_review"].includes(task.status) && !message) throw new Error("Feedback message is required");
@@ -1234,6 +1238,7 @@ export class Organization {
       this.recordEvent(`task.${status}`, { taskId, evidenceCount: evidence.length });
       if (status === "awaiting_quality_review") this.workflow.queueQualityReview(result);
       if (task.toolName === "delivery.review") this.workflow.applyQualityReview(result);
+      if (status === "needs_input") this.workflow?.tryResolveRoutineInput(result);
       if (task.taskKind === "goal_report") this.store.update((state) => {
         const goal = state.goals.find((g) => g.id === task.goalId);
         if (goal) goal.finalReportStatus = status;

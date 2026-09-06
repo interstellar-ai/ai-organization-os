@@ -1,7 +1,24 @@
 export function createGoalUI({ state, api, escapeHtml: h, titleize, agentById, showPage, refreshData, toast }) {
   let selectedGoalId = null;
   let renderedVersion = "";
-  const taskRow = (task) => `<div class="task-row"><div><strong>${h(task.title)}</strong><span>${h(agentById(task.assignedAgentId)?.name || "Unassigned")} · ${h(titleize(task.status))}</span>${task.dependsOn.length ? `<small>After: ${task.dependsOn.map((id) => h(state.tasks.find((t) => t.id === id)?.title || "Missing task")).join("; ")}</small>` : ""}</div><button class="text-button" data-work-task="${h(task.id)}">Open work</button></div>`;
+  const dependencies = (task) => (task.dependsOn || []).map((id) => state.tasks.find((item) => item.id === id));
+  const unmet = (task) => dependencies(task).filter((item) => !item || item.status !== "completed"
+    || (item.toolName === "code.codex" && item.integrationStatus !== "integrated"));
+  const taskStatus = (task) => task.status === "awaiting_review" ? "Needs Founder decision"
+    : task.status === "awaiting_quality_review" ? "Independent review"
+      : task.status === "needs_input" ? "Needs Founder answer"
+        : task.status === "running" ? "Employee working"
+          : task.status === "pending" && unmet(task).length ? "Waiting for prior work"
+            : task.status === "pending" ? "Ready to start" : titleize(task.status);
+  const taskReason = (task) => {
+    if (task.status === "blocked" && unmet(task).length) return `Later requirement after ${unmet(task).map((item) => item?.title || "missing work").join("; ")}. ${task.blockedReason || ""}`.trim();
+    if (["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)) return task.blockedReason || task.error || task.nextAction || "This item needs attention.";
+    if (task.status === "awaiting_quality_review") return "The CEO delegated acceptance to an independent reviewer.";
+    if (task.status === "completed") return task.output?.summary || "Accepted with evidence.";
+    return task.deliverable ? `Expected: ${task.deliverable}` : task.description;
+  };
+  const taskRow = (task, index = null) => `<div class="task-row task-row-${h(task.status)}">${index === null ? "" : `<span class="task-index">${index + 1}</span>`}<div><strong>${h(task.title)}</strong><span>${h(agentById(task.assignedAgentId)?.name || "Unassigned")} · ${h(taskStatus(task))}</span><small>${h(taskReason(task))}</small></div><button class="text-button" data-work-task="${h(task.id)}">Open</button></div>`;
+  const taskGroup = (title, note, items, allWork, open = true) => items.length ? `<section class="project-stage"><div class="project-stage-heading"><div><h4>${h(title)}</h4><p>${h(note)}</p></div><span>${items.length}</span></div><div class="task-stack">${items.map((task) => taskRow(task, allWork.indexOf(task))).join("")}</div></section>` : "";
   const list = (title, items = []) => items.length ? `<h4>${title}</h4><ul>${items.map((x) => `<li>${h(x)}</li>`).join("")}</ul>` : "";
 
   function renderGoals() {
@@ -55,11 +72,39 @@ export function createGoalUI({ state, api, escapeHtml: h, titleize, agentById, s
   }
 
   function renderProjects() {
-    document.querySelector("#projectList").innerHTML = state.projects.map((project) => `<article class="project-card">
-      <div class="goal-top"><h3>${h(project.title)}</h3><span class="status ${h(project.progress.status)}">${h(titleize(project.progress.status))}</span></div>
-      <p>${h(project.objective)}</p><p>Goal: ${h(state.goals.find((g) => g.id === project.goalId)?.title)} · Coordinator: ${h(agentById(project.ownerAgentId)?.name)}</p>
-      ${list("Project acceptance criteria", project.successCriteria)}<div class="progress"><i style="width:${project.progress.percent}%"></i></div><p>${project.progress.completed}/${project.progress.total} tasks accepted</p>
-      ${project.tasks.map(taskRow).join("")}</article>`).join("") || `<div class="empty-state">Confirm a CEO plan in Goals to create projects. Simple goals may use direct tasks instead.</div>`;
+    document.querySelector("#projectList").innerHTML = state.projects.map((project) => {
+      const work = project.tasks.filter((task) => task.taskKind === "work");
+      const coordination = project.tasks.filter((task) => task.taskKind !== "work");
+      const needsFounder = work.filter((task) => ["awaiting_review", "needs_input"].includes(task.status));
+      const currentBlockers = work.filter((task) => ["blocked", "failed"].includes(task.status) && unmet(task).length === 0);
+      const active = work.filter((task) => ["running", "awaiting_quality_review"].includes(task.status)
+        || (task.status === "pending" && unmet(task).length === 0));
+      const next = work.filter((task) => ["pending", "planned"].includes(task.status) && unmet(task).length > 0);
+      const futureBlockers = work.filter((task) => ["blocked", "failed"].includes(task.status) && unmet(task).length > 0);
+      const completed = work.filter((task) => task.status === "completed");
+      const statusLabel = needsFounder.length ? "Needs your decision" : active.some((task) => task.status === "running") ? "Employee working"
+        : active.length ? "Continuing automatically" : currentBlockers.length ? "Blocked now" : project.progress.status === "delivered" ? "Delivered" : titleize(project.progress.status);
+      const focus = needsFounder[0] || active[0] || currentBlockers[0] || next[0] || futureBlockers[0] || completed.at(-1);
+      const focusClass = needsFounder.length || currentBlockers.length ? "needs-founder" : active.length ? "active" : futureBlockers.length ? "future" : "complete";
+      const focusText = needsFounder.length ? `Your decision is needed at “${focus.title}”. Open the delivery to inspect evidence and choose whether work continues.`
+        : active.length ? `Current stage: “${focus.title}”. ${taskReason(focus)}`
+          : currentBlockers.length ? `Execution is stopped at “${focus.title}”: ${taskReason(focus)}`
+            : futureBlockers.length ? `Current work can continue, but ${futureBlockers.length} later stage${futureBlockers.length === 1 ? " has" : "s have"} a known requirement.`
+              : "Every project delivery has been accepted with evidence.";
+      return `<article class="project-card project-overview">
+        <div class="goal-top"><div><span class="section-kicker">${h(state.goals.find((goal) => goal.id === project.goalId)?.title || "PROJECT")}</span><h3>${h(project.title)}</h3></div><span class="status ${h(project.progress.status)}">${h(statusLabel)}</span></div>
+        <p>${h(project.objective)}</p><div class="project-focus ${h(focusClass)}"><span>WHAT HAPPENS NOW</span><strong>${h(focusText)}</strong>${focus ? `<button class="text-button" data-work-task="${h(focus.id)}">Open current stage</button>` : ""}</div>
+        <div class="progress"><i style="width:${project.progress.percent}%"></i></div><div class="project-progress-copy"><strong>${project.progress.percent}% accepted</strong><span>${project.progress.completed}/${project.progress.total} delivery tasks · Coordinator: ${h(agentById(project.ownerAgentId)?.name || "AI CEO")}</span></div>
+        ${taskGroup("Needs your decision", "The CEO stopped because human judgment or authority is required.", needsFounder, work)}
+        ${taskGroup("Working now", "These stages run automatically under the approved plan.", active, work)}
+        ${taskGroup("Blocked now", "Nothing downstream can continue until this cause is resolved.", currentBlockers, work)}
+        ${taskGroup("Up next", "These stages begin after their accepted dependencies.", next, work)}
+        ${taskGroup("Later requirements", "Known future blockers are visible early but do not stop the current stage.", futureBlockers, work)}
+        ${completed.length ? `<details class="project-history"><summary>Completed work (${completed.length})</summary><div class="task-stack">${completed.map((task) => taskRow(task, work.indexOf(task))).join("")}</div></details>` : ""}
+        ${coordination.length ? `<details class="project-history"><summary>System review activity (${coordination.length})</summary><div class="task-stack">${coordination.map((task) => taskRow(task)).join("")}</div></details>` : ""}
+        <details class="project-history"><summary>Project definition</summary>${list("Acceptance criteria", project.successCriteria)}</details>
+      </article>`;
+    }).join("") || `<div class="empty-state">Confirm a CEO plan in Goals to create projects. Simple goals may use direct tasks instead.</div>`;
   }
 
   function openGoal(goalId) {

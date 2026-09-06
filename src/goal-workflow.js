@@ -88,14 +88,35 @@ export function validateGoalPlan(value, employees, templates = []) {
   return { summary: value.summary, successCriteria: value.successCriteria, assumptions: value.assumptions, staffingRequests, projects, tasks };
 }
 
+function unmetDependencies(task, tasks) {
+  return (task.dependsOn || []).filter((dependencyId) => {
+    const dependency = tasks.find((item) => item.id === dependencyId);
+    return !dependency || dependency.status !== "completed"
+      || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated");
+  });
+}
+
 function progress(tasks) {
   const deliveryTasks = tasks.filter((t) => t.taskKind === "work");
   const completed = deliveryTasks.filter((t) => t.status === "completed").length;
+  const ready = (task) => unmetDependencies(task, tasks).length === 0;
+  const currentBlockers = deliveryTasks.filter((task) => ["blocked", "failed"].includes(task.status) && ready(task));
+  const futureBlockers = deliveryTasks.filter((task) => ["blocked", "failed"].includes(task.status) && !ready(task));
   const status = !deliveryTasks.length ? "not_started" : completed === deliveryTasks.length ? "delivered"
-    : deliveryTasks.some((t) => ["blocked", "failed"].includes(t.status)) ? "blocked"
-      : deliveryTasks.some((t) => t.status === "needs_input") ? "needs_input"
-        : deliveryTasks.some((t) => ["awaiting_review", "awaiting_quality_review"].includes(t.status)) ? "awaiting_review" : "in_progress";
-  return { status, total: deliveryTasks.length, completed, percent: deliveryTasks.length ? Math.round(completed / deliveryTasks.length * 100) : 0 };
+    : deliveryTasks.some((t) => t.status === "needs_input") ? "needs_input"
+      : deliveryTasks.some((t) => t.status === "awaiting_review") ? "awaiting_review"
+        : deliveryTasks.some((t) => ["running", "awaiting_quality_review"].includes(t.status)) ? "in_progress"
+          : deliveryTasks.some((t) => t.status === "pending" && ready(t)) ? "in_progress"
+            : currentBlockers.length ? "blocked"
+              : futureBlockers.length ? "blocked" : "in_progress";
+  return {
+    status,
+    total: deliveryTasks.length,
+    completed,
+    percent: deliveryTasks.length ? Math.round(completed / deliveryTasks.length * 100) : 0,
+    currentBlockerIds: currentBlockers.map((task) => task.id),
+    futureBlockerIds: futureBlockers.map((task) => task.id)
+  };
 }
 
 export class GoalWorkflow {
@@ -406,6 +427,7 @@ export class GoalWorkflow {
     const target = org.getTask(input.targetTaskId);
     if (reviewTask.reviewTargetTaskId !== target.id || target.goalId !== reviewTask.goalId || target.planId !== reviewTask.planId
       || target.status !== "awaiting_quality_review" || target.assignedAgentId === reviewer.id) throw new Error("Quality review context is invalid");
+    const dependencyDeliveries = this.dependencyContext(target, reviewer.id);
     const contract = { verdict: "pass | revise | escalate", summary: "Concise conclusion", confidence: 0.9,
       checks: target.acceptanceCriteria.map((criterion) => ({ criterion, status: "pass | fail | uncertain", evidence: "Specific evidence from the files" })),
       feedback: ["Specific correction when revision is required"] };
@@ -416,7 +438,7 @@ export class GoalWorkflow {
       "Use verdict pass only when every criterion passes and confidence is at least 0.7. Use revise for concrete fixable failures. Use escalate for uncertainty requiring Founder judgment or missing authoritative information.",
       "Return exactly one review.json artifact containing this JSON contract and no other artifacts:", JSON.stringify(contract),
       JSON.stringify({ workOrder: { title: target.title, instructions: target.description, deliverable: target.deliverable,
-        acceptanceCriteria: target.acceptanceCriteria, context: target.context }, delivery: target.output })
+        acceptanceCriteria: target.acceptanceCriteria, context: target.context }, dependencyDeliveries, delivery: target.output })
     ].join("\n");
     this.requireModelRun(reviewTask);
     const output = await this.executor.execute({ task: { ...reviewTask, description: prompt, deliverable: "review.json",
@@ -440,7 +462,9 @@ export class GoalWorkflow {
       return completed;
     }
     const revisionCount = target.autoRevisionCount || 0;
-    if (decision.verdict === "revise" && revisionCount < goal.autonomyPolicy.maxRevisionRounds) {
+    const hasFixableFailure = decision.checks.some((check) => check.status === "fail") && decision.feedback.length > 0;
+    if ((decision.verdict === "revise" || (decision.verdict === "escalate" && hasFixableFailure))
+      && revisionCount < goal.autonomyPolicy.maxRevisionRounds) {
       const previous = { attempt: target.attempts, status: target.status, output: target.output, evidence: target.evidence,
         qualityReview: decision, endedAt: now() };
       const revised = org.updateTask(target.id, { status: "pending", error: null, blockedReason: null, evidence: [], nextAttemptAt: null,
@@ -448,7 +472,8 @@ export class GoalWorkflow {
         messages: [...(target.messages || []), { role: "quality_reviewer", content: decision.feedback.join("\n"), createdAt: now() }],
         executionHistory: [...(target.executionHistory || []), previous],
         nextAction: `Automatic revision ${revisionCount + 1} of ${goal.autonomyPolicy.maxRevisionRounds} is queued.` });
-      org.recordEvent("task.auto_revision_queued", { taskId: target.id, reviewTaskId: reviewTask.id, revision: revisionCount + 1 });
+      org.recordEvent("task.auto_revision_queued", { taskId: target.id, reviewTaskId: reviewTask.id, revision: revisionCount + 1,
+        unresolvedUncertainty: decision.verdict === "escalate" });
       return revised;
     }
     const reason = decision.verdict === "escalate" ? "The independent reviewer requires Founder judgment."
@@ -457,6 +482,73 @@ export class GoalWorkflow {
       qualityReviewTaskId: reviewTask.id, nextAction: `${reason} Review the delivery and quality report.` });
     org.recordEvent("task.review_escalated", { taskId: target.id, reviewTaskId: reviewTask.id, reason });
     return escalated;
+  }
+
+  retryRoutineReview(taskId) {
+    const org = this.organization;
+    const task = org.getTask(taskId);
+    const goal = org.getGoal(task.goalId);
+    const previousReview = org.list("tasks").find((item) => item.id === task.qualityReviewTaskId)
+      || org.list("tasks").filter((item) => item.reviewTargetTaskId === task.id).at(-1);
+    const decision = previousReview?.output?.review;
+    const revisionCount = task.autoRevisionCount || 0;
+    const hasFixableFailure = decision?.checks.some((check) => check.status === "fail") && decision.feedback.length > 0;
+    const canRevise = hasFixableFailure && revisionCount < goal.autonomyPolicy?.maxRevisionRounds;
+    const canRecheck = decision?.checks.every((check) => ["pass", "uncertain"].includes(check.status));
+    const safeRoutineEscalation = decision?.verdict === "escalate" && (canRevise || canRecheck);
+    if (task.status !== "awaiting_review" || !task.planId || task.taskKind !== "work" || task.executionMode !== "document"
+      || !goal.autonomyPolicy?.autoReviewDocuments || !safeRoutineEscalation) {
+      throw new Error("This item requires Founder judgment and cannot be returned to routine review");
+    }
+    if (canRevise) {
+      const previous = { attempt: task.attempts, status: task.status, output: task.output, evidence: task.evidence,
+        qualityReview: decision, endedAt: now() };
+      const revised = org.updateTask(task.id, { status: "pending", error: null, blockedReason: null, evidence: [], nextAttemptAt: null,
+        founderReviewRequired: false, autoRevisionCount: revisionCount + 1,
+        messages: [...(task.messages || []), { role: "quality_reviewer", content: decision.feedback.join("\n"), createdAt: now() }],
+        executionHistory: [...(task.executionHistory || []), previous],
+        nextAction: `The AI CEO queued routine internal revision ${revisionCount + 1} of ${goal.autonomyPolicy.maxRevisionRounds}.` });
+      org.recordEvent("task.routine_revision_queued", { taskId: task.id, reviewTaskId: previousReview.id,
+        revision: revisionCount + 1, decidedBy: "AI CEO" });
+      return { task: revised, review: null, action: "revision" };
+    }
+    const pending = org.updateTask(task.id, { status: "awaiting_quality_review", founderReviewRequired: false,
+      nextAction: "The AI CEO returned this low-risk internal uncertainty to independent review with complete approved context." });
+    const review = this.queueQualityReview(pending);
+    org.recordEvent("task.routine_review_retried", { taskId: task.id, reviewTaskId: review?.id || null, decidedBy: "AI CEO" });
+    return { task: org.getTask(task.id), review, action: "review" };
+  }
+
+  tryResolveRoutineInput(task) {
+    const org = this.organization;
+    const goal = org.getGoal(task.goalId);
+    if (task.status !== "needs_input" || !task.planId || task.taskKind !== "work" || task.executionMode !== "document"
+      || goal.autonomyPolicy?.mode !== "controlled" || !task.output?.questions?.length) return null;
+    const requestedFiles = [...new Set(task.output.questions.flatMap((question) =>
+      question.match(/[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}\.(?:md|txt|csv|json)/g) || []))];
+    if (!requestedFiles.length) return null;
+    const deliveries = this.dependencyContext(task, org.list("agents").find((agent) => agent.jobType === "ai_ceo")?.id);
+    const availableFiles = new Set(deliveries.flatMap((delivery) => delivery.artifacts.map((artifact) => artifact.filename)));
+    if (!requestedFiles.every((filename) => availableFiles.has(filename))) return null;
+    const previous = { attempt: task.attempts, status: task.status, output: task.output, evidence: task.evidence,
+      endedAt: now() };
+    const resumed = org.updateTask(task.id, { status: "pending", output: task.output, evidence: [], error: null, blockedReason: null,
+      messages: [...(task.messages || []), { role: "ai_ceo",
+        content: `The requested accepted internal files are available in the approved dependency chain: ${requestedFiles.join(", ")}. Continue using those files.`, createdAt: now() }],
+      executionHistory: [...(task.executionHistory || []), previous],
+      nextAction: "The AI CEO supplied requested files from the accepted internal dependency chain and resumed work." });
+    org.recordEvent("task.routine_input_resolved", { taskId: task.id, requestedFiles, decidedBy: "AI CEO" });
+    return resumed;
+  }
+
+  resolveRoutineStop(taskId) {
+    const task = this.organization.getTask(taskId);
+    if (task.status === "needs_input") {
+      const resumed = this.tryResolveRoutineInput(task);
+      if (!resumed) throw new Error("This question requires Founder input and cannot be resolved from accepted internal files");
+      return { task: resumed, action: "input" };
+    }
+    return this.retryRoutineReview(taskId);
   }
 
   handleExecutionFailure(task, error) {
@@ -583,19 +675,30 @@ export class GoalWorkflow {
     return report;
   }
 
-  dependencyContext(task) {
+  dependencyContext(task, recipientAgentId = task.assignedAgentId) {
     if (!task.planId) return [];
     const org = this.organization;
     const goal = org.getGoal(task.goalId);
     if (goal.approvedPlanId !== task.planId) throw new Error("Task has no approved goal plan");
-    const deliveries = task.dependsOn.map((dependencyId) => {
+    const dependencyIds = [];
+    const pending = [...(task.dependsOn || [])];
+    const visited = new Set();
+    while (pending.length) {
+      const dependencyId = pending.shift();
+      if (visited.has(dependencyId)) continue;
+      visited.add(dependencyId);
+      dependencyIds.push(dependencyId);
+      const dependency = org.getTask(dependencyId);
+      pending.push(...(dependency.dependsOn || []));
+    }
+    const deliveries = dependencyIds.map((dependencyId) => {
       const dep = org.getTask(dependencyId);
       if (dep.goalId !== task.goalId || dep.planId !== task.planId || dep.status !== "completed") throw new Error("Unapproved dependency handoff");
       return { taskId: dep.id, title: dep.title, summary: dep.output?.summary, artifacts: dep.output?.artifacts || [],
         limitations: dep.output?.limitations || [], evidence: dep.evidence };
     });
     if (deliveries.length) org.recordEvent("task.artifacts_handed_off", { taskId: task.id, goalId: goal.id, planId: task.planId,
-      recipientAgentId: task.assignedAgentId, dependencies: deliveries.map((d) => ({ taskId: d.taskId,
+      recipientAgentId, dependencies: deliveries.map((d) => ({ taskId: d.taskId,
         artifacts: d.artifacts.map((a) => ({ filename: a.filename, sha256: a.sha256 })) })) });
     return deliveries;
   }

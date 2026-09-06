@@ -31,7 +31,7 @@ const pageTitles = {
   projects: "Projects",
   employees: "Employees",
   access: "Access Control",
-  approvals: "Approvals",
+  approvals: "Founder Decisions",
   knowledge: "Knowledge",
   reports: "Reports",
   audit: "Audit Trail",
@@ -113,6 +113,38 @@ function goalCard(goal) {
   </article>`;
 }
 
+function projectForTask(task) {
+  return state.projects.find((project) => project.id === task.projectId) || null;
+}
+
+function unmetDependencies(task) {
+  return (task.dependsOn || []).map((id) => state.tasks.find((item) => item.id === id)).filter((dependency) =>
+    !dependency || dependency.status !== "completed" || (dependency.toolName === "code.codex" && dependency.integrationStatus !== "integrated"));
+}
+
+function taskLocation(task) {
+  const project = projectForTask(task);
+  const goal = state.goals.find((item) => item.id === task.goalId);
+  return `${project?.title || goal?.title || "Independent work"} → ${task.title}`;
+}
+
+function taskStopReason(task) {
+  if (task.status === "awaiting_review") return task.nextAction || "Founder judgment is required before dependent work can continue.";
+  if (task.status === "needs_input") return task.nextAction || "The assigned employee needs an answer from the Founder.";
+  if (task.status === "failed") return task.error || "Execution failed and needs diagnosis.";
+  if (task.status === "blocked") {
+    const dependencies = unmetDependencies(task);
+    if (dependencies.length) return `Future requirement. Waiting for ${dependencies.map((item) => item?.title || "a missing dependency").join("; ")}. ${task.blockedReason || ""}`.trim();
+    return task.blockedReason || task.nextAction || "Execution is blocked at this task.";
+  }
+  return task.nextAction || "Execution needs attention.";
+}
+
+function founderReviewTasks() {
+  return state.tasks.filter((task) => task.taskKind === "work"
+    && ((task.status === "awaiting_review" && task.founderReviewRequired) || task.status === "needs_input"));
+}
+
 function renderCeoConversation() {
   const container = document.querySelector("#ceoConversation");
   const conversation = state.ceoConversation;
@@ -134,34 +166,38 @@ function renderCeoConversation() {
 
 function renderHome() {
   renderCeoConversation();
-  const pending = [
+  const authorityDecisions = [
     ...state.staffingRequests.filter((request) => request.status === "pending"),
     ...state.accessRequests.filter((request) => request.status === "pending"),
     ...state.integrationRequests.filter((request) => request.status === "pending"),
     ...state.externalActions.filter((request) => request.status === "pending")
   ];
-  const blocked = state.tasks.filter((task) => ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status));
-  const reviews = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_review");
+  const deliveryReviews = founderReviewTasks();
+  const planReviews = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_plan_approval");
+  const currentStops = state.tasks.filter((task) => task.taskKind === "work"
+    && ["blocked", "failed", "needs_input"].includes(task.status) && unmetDependencies(task).length === 0);
   const completed = state.tasks.filter((task) => task.status === "completed").length;
   const evidence = state.tasks.reduce((total, task) => total + (task.evidence?.length || 0), 0);
+  const decisionCount = authorityDecisions.length + deliveryReviews.length + planReviews.length;
 
   document.querySelector("#metricGrid").innerHTML = [
     metric("AI employees", state.agents.length, `${new Set(state.agents.map((agent) => agent.department)).size} departments represented`),
-    metric("Active goals", state.goals.filter((goal) => goal.status === "active").length, `${reviews.length} awaiting Founder review`),
+    metric("Active goals", state.goals.filter((goal) => goal.status === "active").length, `${currentStops.length} current workflow stops`),
     metric("Verified tasks", completed, `${evidence} evidence records attached`),
-    metric("Pending approvals", pending.length, pending.length ? "Founder decision required" : "No decisions waiting")
+    metric("Founder decisions", decisionCount, decisionCount ? "Your judgment or authority is required" : "Routine work continues automatically")
   ].join("");
 
   const attention = [
-    ...state.staffingRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `CEO proposes hiring ${request.proposedName}`, note: state.jobTemplates.find((template) => template.id === request.templateId)?.name || "Job template", action: "Review" })),
-    ...state.accessRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: assetById(request.assetId)?.name || "Unknown asset", action: "Approval" })),
-    ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Review" })),
-    ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: state.tasks.find((task) => task.id === request.taskId)?.title || "External work", action: "Review" })),
-    ...blocked.slice(0, 3).map((task) => ({ signal: "red", title: task.title, note: task.blockedReason || task.error || task.nextAction || "Execution needs attention", action: task.status === "awaiting_review" ? "Review" : task.status === "needs_input" ? "Reply" : "Blocked" })),
-    ...reviews.slice(0, 3).map((goal) => ({ signal: "", title: goal.title, note: `${goal.progress.completed} tasks completed with evidence`, action: "Review" }))
+    ...deliveryReviews.map((task) => ({ signal: "red", title: task.title, note: `Founder decision at ${taskLocation(task)}`, action: "Open", taskId: task.id })),
+    ...planReviews.map((goal) => ({ signal: "red", title: `Confirm the CEO plan: ${goal.title}`, note: "No project work starts before this decision.", action: "Goals", page: "goals" })),
+    ...state.staffingRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `CEO proposes hiring ${request.proposedName}`, note: "Authority change · Founder decision", action: "Decide", page: "approvals" })),
+    ...state.accessRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: `${assetById(request.assetId)?.name || "Unknown asset"} · Access change`, action: "Decide", page: "approvals" })),
+    ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Decide", page: "approvals" })),
+    ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: "External effect · exact payload review", action: "Decide", page: "approvals" })),
+    ...currentStops.map((task) => ({ signal: "red", title: task.title, note: `${taskLocation(task)} · ${taskStopReason(task)}`, action: task.status === "needs_input" ? "Reply" : "Inspect", taskId: task.id }))
   ].slice(0, 6);
   document.querySelector("#attentionList").innerHTML = attention.length
-    ? attention.map((item) => `<div class="attention-item"><i class="attention-signal ${item.signal}"></i><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.note)}</span></div><b>${escapeHtml(item.action)}</b></div>`).join("")
+    ? attention.map((item) => `<button class="attention-item" type="button" ${item.taskId ? `data-work-task="${escapeHtml(item.taskId)}"` : `data-page-link="${escapeHtml(item.page || "approvals")}"`}><i class="attention-signal ${item.signal}"></i><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.note)}</span></div><b>${escapeHtml(item.action)}</b></button>`).join("")
     : `<div class="attention-item"><i class="attention-signal green"></i><div><strong>No urgent decisions</strong><span>The organization has no pending approval or blocked workflow.</span></div><b>Clear</b></div>`;
   document.querySelector("#homeGoalList").innerHTML = state.goalSummaries.length
     ? state.goalSummaries.slice().reverse().slice(0, 4).map(goalCard).join("")
@@ -194,7 +230,8 @@ function renderProjects() {
   if (repositories.some((asset) => asset.id === selectedAsset)) assetSelect.value = selectedAsset;
   if (state.goals.some((goal) => goal.id === selectedGoal)) goalSelect.value = selectedGoal;
 
-  const workRequests = state.tasks.filter((task) => task.requestSource === "founder_work_request" || task.toolName === "code.codex").slice().reverse();
+  const workRequests = state.tasks.filter((task) => !task.planId
+    && (task.requestSource === "founder_work_request" || task.toolName === "code.codex")).slice().reverse();
   document.querySelector("#workRequestList").innerHTML = workRequests.length ? workRequests.map((task) => {
     const agent = agentById(task.assignedAgentId);
     const goal = state.goals.find((item) => item.id === task.goalId);
@@ -220,9 +257,20 @@ function renderWorkDelivery() {
   if (version === deliveryVersion) return;
   deliveryVersion = version;
   const output = task.output || {};
+  const qualityTask = state.tasks.find((item) => item.id === task.qualityReviewTaskId)
+    || state.tasks.filter((item) => item.reviewTargetTaskId === task.id).at(-1);
+  const quality = qualityTask?.output?.review;
+  const routineEligible = task.planId && task.executionMode === "document"
+    && ((task.status === "awaiting_review" && quality?.verdict === "escalate") || task.status === "needs_input");
   const list = (title, items = []) => items.length ? `<h4>${title}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "";
   const files = (artifacts = [], download = false) => artifacts.map((artifact, index) => `<details class="delivery-file"><summary>${escapeHtml(artifact.filename)}${download ? ` · ${artifact.bytes} bytes` : ""}</summary><pre>${escapeHtml(artifact.content)}</pre>${download ? `<a class="text-button" href="/api/tasks/${encodeURIComponent(task.id)}/artifacts/${index}" download>Download file</a>` : ""}</details>`).join("");
-  document.querySelector("#workDeliveryContent").innerHTML = `<h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(output.summary || task.description)}</p><p>${escapeHtml(task.error || task.blockedReason || task.nextAction || "")}</p>${list("Questions from the employee", output.questions)}${list("Limitations", output.limitations)}${files(output.artifacts, true)}${(task.messages || []).map((message) => `<blockquote><strong>${message.role === "quality_reviewer" ? "Independent reviewer" : "Founder"}</strong><p>${escapeHtml(message.content)}</p></blockquote>`).join("")}<details><summary>Execution history (${task.executionHistory?.length || 0})</summary>${(task.executionHistory || []).map((run) => `<h4>Attempt ${run.attempt} · ${escapeHtml(titleize(run.status))}</h4><p>${escapeHtml(run.output?.summary || run.error || "No delivery")}</p>${files(run.output?.artifacts)}`).join("")}</details>`;
+  const stopped = ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status)
+    ? `<section class="work-stop"><span>WHY WORK STOPPED</span><strong>${escapeHtml(taskStopReason(task))}</strong><small>Location: ${escapeHtml(taskLocation(task))}</small><small>Decision owner: ${routineEligible ? "AI CEO may resolve internally; Founder only if uncertainty remains" : task.status === "awaiting_review" || task.status === "needs_input" ? "Founder" : "AI CEO first, Founder only if authority is required"}</small></section>` : "";
+  const qualityReport = quality ? `<section class="quality-report"><div class="goal-top"><div><span class="section-kicker">INDEPENDENT QUALITY REVIEW</span><h4>${escapeHtml(quality.summary)}</h4></div><span class="status ${quality.verdict === "pass" ? "completed" : quality.verdict === "revise" ? "pending" : "awaiting_review"}">${escapeHtml(titleize(quality.verdict))} · ${Math.round(quality.confidence * 100)}%</span></div><div class="quality-checks">${quality.checks.map((check) => `<div><span class="status ${check.status === "pass" ? "completed" : check.status === "fail" ? "failed" : "pending"}">${escapeHtml(check.status)}</span><strong>${escapeHtml(check.criterion)}</strong><p>${escapeHtml(check.evidence)}</p></div>`).join("")}</div>${list("Reviewer feedback", quality.feedback)}</section>` : "";
+  const routineRetry = routineEligible
+    ? `<section class="routine-resolution"><div><span class="section-kicker">LOW-RISK INTERNAL RESOLUTION</span><strong>${task.status === "needs_input" ? "The CEO can check whether the requested information already exists in the accepted upstream work and resume automatically when it does." : "The CEO can apply actionable internal corrections and repeat independent review with all accepted dependency files."} This does not grant access or approve an external action.</strong></div><button class="secondary-button" type="button" data-resolve-routine-stop="${escapeHtml(task.id)}">Let CEO resolve internally</button></section>` : "";
+  const messageRole = (message) => message.role === "quality_reviewer" ? "Independent reviewer" : message.role === "ai_ceo" ? "AI CEO" : "Founder";
+  document.querySelector("#workDeliveryContent").innerHTML = `<h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(output.summary || task.description)}</p>${stopped}${qualityReport}${routineRetry}${list("Questions from the employee", output.questions)}${list("Limitations", output.limitations)}${files(output.artifacts, true)}${(task.messages || []).map((message) => `<blockquote><strong>${messageRole(message)}</strong><p>${escapeHtml(message.content)}</p></blockquote>`).join("")}<details><summary>Execution history (${task.executionHistory?.length || 0})</summary>${(task.executionHistory || []).map((run) => `<h4>Attempt ${run.attempt} · ${escapeHtml(titleize(run.status))}</h4><p>${escapeHtml(run.output?.summary || run.error || "No delivery")}</p>${files(run.output?.artifacts)}`).join("")}</details>`;
   const canReply = task.taskKind !== "goal_planning" && task.executionMode !== "external" && task.workType !== "software_development" && ["blocked", "failed", "needs_input", "awaiting_review"].includes(task.status);
   const canAcceptCode = task.workType === "software_development" && task.status === "awaiting_review";
   document.querySelector("#workFeedbackForm").classList.toggle("hidden", !canReply && !canAcceptCode);
@@ -255,7 +303,7 @@ function renderExternalConfiguration(task) {
   const asset = (type) => state.assets.find((item) => item.type === "external_connector" && item.connectorType === type);
   const status = (type) => state.connectors.find((item) => item.type === type);
   const badge = (type) => status(type)?.configured ? "Ready" : "Needs server configuration";
-  panel.insertAdjacentHTML("beforeend", `<section class="external-config"><h4>Choose an external tool</h4><p>Submitting creates an exact action preview. Nothing is sent until you approve that preview in Approvals.</p>
+  panel.insertAdjacentHTML("beforeend", `<section class="external-config"><h4>Choose an external tool</h4><p>Submitting creates an exact action preview. Nothing is sent until you approve that preview in Decisions.</p>
     ${asset("web_research") ? `<details><summary>Live web research · ${escapeHtml(badge("web_research"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="web_research"><input type="hidden" name="assetId" value="${escapeHtml(asset("web_research").id)}" /><label>Research question<input name="query" placeholder="What should the employee investigate?" /></label><label>Public source URLs<textarea name="urls" placeholder="One HTTPS URL per line. Optional when web search is configured."></textarea></label><button class="secondary-button" type="submit">Prepare research action</button></form></details>` : ""}
     ${asset("email") ? `<details><summary>Email · ${escapeHtml(badge("email"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="email"><input type="hidden" name="assetId" value="${escapeHtml(asset("email").id)}" /><label>Recipient<input name="to" type="email" required /></label><label>Subject<input name="subject" required /></label><label>Message<textarea name="text" required></textarea></label><button class="secondary-button" type="submit">Prepare email approval</button></form></details>` : ""}
     ${asset("crm") ? `<details><summary>CRM record · ${escapeHtml(badge("crm"))}</summary><form data-configure-external="${escapeHtml(task.id)}" data-connector="crm"><input type="hidden" name="assetId" value="${escapeHtml(asset("crm").id)}" /><label>Record type<select name="objectType"><option value="contacts">Contact</option><option value="companies">Company</option><option value="deals">Deal</option></select></label><label>Primary name<input name="primaryName" required placeholder="Person, company or deal name" /></label><label>Email, if applicable<input name="email" type="email" /></label><button class="secondary-button" type="submit">Prepare CRM approval</button></form></details>` : ""}
@@ -450,10 +498,18 @@ function renderApprovals() {
   const accessItems = state.accessRequests.slice().reverse();
   const integrations = state.integrationRequests.slice().reverse();
   const externalActions = state.externalActions.slice().reverse();
-  const pending = [...staffingItems, ...accessItems, ...integrations, ...externalActions].filter((request) => request.status === "pending").length;
+  const reviewItems = founderReviewTasks().slice().reverse();
+  const planItems = state.goalSummaries.filter((goal) => goal.executionStatus === "awaiting_plan_approval").slice().reverse();
+  const pending = [...staffingItems, ...accessItems, ...integrations, ...externalActions].filter((request) => request.status === "pending").length
+    + reviewItems.length + planItems.length;
   const navCount = document.querySelector("#approvalNavCount");
   navCount.textContent = pending;
   navCount.classList.toggle("hidden", pending === 0);
+  const reviewCards = reviewItems.map((task) => {
+    const review = state.tasks.find((item) => item.id === task.qualityReviewTaskId)?.output?.review;
+    return `<article class="approval-card decision-card"><div class="approval-top"><div><span class="section-kicker">${task.status === "needs_input" ? "EMPLOYEE QUESTION" : "DELIVERY JUDGMENT"}</span><h3>${escapeHtml(task.title)}</h3></div><span class="status awaiting_review">Needs you</span></div><p>${escapeHtml(review?.summary || task.output?.summary || task.nextAction || "The delivery requires Founder judgment before work continues.")}</p><div class="approval-context"><div class="detail-field"><span>Location</span><strong>${escapeHtml(taskLocation(task))}</strong></div><div class="detail-field"><span>Why CEO stopped</span><strong>${escapeHtml(task.status === "needs_input" ? "Information requested" : review?.verdict === "escalate" ? "Unresolved uncertainty" : "Controlled limit reached")}</strong></div><div class="detail-field"><span>Evidence</span><strong>${task.evidence?.length || 0} records</strong></div><div class="detail-field"><span>Next</span><strong>Inspect work</strong></div></div><button class="primary-button" type="button" data-work-task="${escapeHtml(task.id)}">Open work and decide</button></article>`;
+  });
+  const planCards = planItems.map((goal) => `<article class="approval-card decision-card"><div class="approval-top"><div><span class="section-kicker">GOAL PLAN</span><h3>${escapeHtml(goal.title)}</h3></div><span class="status awaiting_review">Needs you</span></div><p>The CEO has proposed the projects, assignments and autonomy boundary. No employee work starts until you confirm it.</p><button class="primary-button" type="button" data-page-link="goals">Open CEO plan</button></article>`);
   const staffingCards = staffingItems.map((request) => {
     const template = state.jobTemplates.find((item) => item.id === request.templateId);
     const manager = agentById(request.managerAgentId);
@@ -476,8 +532,8 @@ function renderApprovals() {
     const connector = state.connectors.find((item) => item.type === action.connectorType);
     return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">EXTERNAL ACTION</span><h3>${escapeHtml(task?.title || titleize(action.connectorType))}</h3></div><span class="status ${escapeHtml(action.status)}">${escapeHtml(titleize(action.status))}</span></div><p>Approve only if this exact payload and destination are correct. ${action.connectorType === "web_research" ? "This action reads public sources." : "This action may change an external system."}</p><div class="approval-context"><div class="detail-field"><span>Connector</span><strong>${escapeHtml(titleize(action.connectorType))}</strong></div><div class="detail-field"><span>Operation</span><strong>${escapeHtml(action.operation)}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(action.risk)}</strong></div><div class="detail-field"><span>Runtime</span><strong>${connector?.configured ? "Ready" : "Not configured"}</strong></div></div><details open><summary>Exact action payload</summary><pre>${escapeHtml(JSON.stringify(action.payload, null, 2))}</pre></details>${action.error ? `<p>${escapeHtml(action.error)}</p>` : ""}${action.result ? `<p>${escapeHtml(action.result.summary)} · receipt ${escapeHtml(action.result.receiptId)}</p>` : ""}${action.status === "pending" ? decisionForm("external", action.id, !connector?.configured) : decisionNote(action)}</article>`;
   });
-  const cards = [...staffingCards, ...externalCards, ...integrationCards, ...accessCards];
-  document.querySelector("#approvalList").innerHTML = cards.length ? cards.join("") : empty("No approval requests have been created.");
+  const cards = [...reviewCards, ...planCards, ...staffingCards, ...externalCards, ...integrationCards, ...accessCards];
+  document.querySelector("#approvalList").innerHTML = cards.length ? cards.join("") : empty("No Founder decisions are waiting. The AI CEO and employees can continue routine internal work automatically.");
 }
 
 function decisionForm(type, id, approvalDisabled = false) {
@@ -579,6 +635,14 @@ async function createGoalFromCeoMessage(messageId) {
   } catch (error) { toast(error.message, true); }
 }
 
+async function resolveRoutineStop(taskId) {
+  try {
+    await api(`/api/tasks/${taskId}/resolve-routine-stop`, { method: "POST", body: "{}" });
+    toast("The CEO resolved the routine internal stop and resumed controlled work.");
+    await refreshData({ quiet: true });
+  } catch (error) { toast(error.message, true); }
+}
+
 async function decideRequest(requestId, decision, grantType = "once") {
   try {
     await api(`/api/access-requests/${requestId}/decision`, { method: "POST", body: JSON.stringify({ decision, grantType, durationMinutes: 60, reason: decision === "approved" ? "Approved by Founder in the local console." : "Rejected by Founder in the local console." }) });
@@ -639,6 +703,8 @@ document.addEventListener("click", (event) => {
   if (hireTemplate) openHireForm(hireTemplate.dataset.hireTemplate);
   const ceoGoal = event.target.closest("[data-ceo-create-goal]");
   if (ceoGoal) createGoalFromCeoMessage(ceoGoal.dataset.ceoCreateGoal);
+  const routineReview = event.target.closest("[data-resolve-routine-stop]");
+  if (routineReview) resolveRoutineStop(routineReview.dataset.resolveRoutineStop);
   const closeForm = event.target.closest("[data-close-form]");
   if (closeForm) document.querySelector(`#${closeForm.dataset.closeForm}`).classList.add("hidden");
 });
@@ -736,7 +802,7 @@ document.querySelector("#workDeliveryContent").addEventListener("submit", async 
       if (connectorType === "publishing") payload = { destination: values.destination, title: values.title, content: values.content };
       await api(`/api/tasks/${form.dataset.configureExternal}/configure-external`, { method: "POST",
         body: JSON.stringify({ connectorType, assetId: values.assetId, payload }) });
-      toast("Exact action preview created. Review it in Approvals before anything happens externally.");
+      toast("Exact action preview created. Review it in Decisions before anything happens externally.");
       showPage("approvals");
     }
     await refreshData({ quiet: true });

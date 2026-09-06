@@ -289,6 +289,12 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "feedback") {
       return json(response, 200, organization.resumeGeneralTask(parts[2], await body(request), { generalAvailable: generalExecutor.status().available }));
     }
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "retry-routine-review") {
+      return json(response, 200, workflow.retryRoutineReview(parts[2]));
+    }
+    if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "resolve-routine-stop") {
+      return json(response, 200, workflow.resolveRoutineStop(parts[2]));
+    }
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "accept") return json(response, 200, organization.acceptTask(parts[2]));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "request-integration") return json(response, 201, organization.requestCodeIntegration(parts[2]));
     if (request.method === "POST" && parts[1] === "tasks" && parts[3] === "configure-external") return json(response, 201, organization.requestExternalAction(parts[2], await body(request), connectors));

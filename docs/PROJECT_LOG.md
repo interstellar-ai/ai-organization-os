@@ -212,3 +212,15 @@ Add new entries under this heading with the date, change, decision, and verifica
 - Kept conversation non-executing: it may only record messages and audit events. A suggested goal requires an explicit Founder click before creating a goal and separately requesting a plan.
 - Added a dedicated read-only Codex executor with web search, shell, browser, plugins, MCP, and other local tools disabled.
 - Added automated coverage for snapshot grounding, message persistence, non-execution, explicit goal creation, provider-contract validation, and tool disablement.
+
+## 2026-09-06 — Project clarity and Founder decision routing
+
+- Replaced the flat project task dump with a stage-oriented view: current focus, Founder decisions, automatic work, current blockers, downstream work, later requirements, completed deliveries, and collapsed system-review activity.
+- Changed project status precedence so a known future connector requirement does not hide work that is currently running or awaiting review. Current and future blocker IDs are now reported separately.
+- Added explicit blocker location, cause, decision owner, quality-review evidence, and a direct route to the affected delivery from Home, Projects, and Decisions.
+- Renamed the UI approval center to Decisions and included Founder-required delivery judgment and goal plans alongside staffing, access, code-integration, and exact external-action decisions.
+- Fixed independent review context so reviewers receive accepted dependency artifacts from the same approved plan. This prevents false escalation when a criterion depends on an earlier approved document.
+- Added a bounded AI CEO routine-resolution path: an internal document uncertainty with no failed criterion may be returned to fresh independent review, but the CEO cannot self-accept, change authority, or perform external actions.
+- Extended dependency handoff across the complete accepted upstream chain. Named-file questions are resumed automatically when the requested file already exists there; otherwise they remain Founder decisions.
+- Enabled Founder feedback on controlled-plan document deliveries and retained mandatory Founder control for real uncertainty, code, access, staffing, integration, external effects, and exhausted limits.
+- Verified 61 automated tests, including reviewer dependency context, transitive internal-file resolution, routine re-review, mixed uncertainty correction, and future-blocker status behavior.
