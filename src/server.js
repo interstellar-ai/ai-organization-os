@@ -246,6 +246,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/access-requests") {
       return json(response, 200, organization.list("accessRequests"));
     }
+    if (request.method === "GET" && url.pathname === "/api/staffing-requests") return json(response, 200, organization.list("staffingRequests"));
     if (request.method === "GET" && url.pathname === "/api/integration-requests") return json(response, 200, organization.list("integrationRequests"));
     if (request.method === "GET" && url.pathname === "/api/external-actions") return json(response, 200, organization.list("externalActions"));
     if (request.method === "GET" && url.pathname === "/api/connectors") return json(response, 200, connectors.list());
@@ -294,6 +295,9 @@ async function route(request, response) {
     if (request.method === "POST" && url.pathname === "/api/access-requests") return json(response, 201, organization.createAccessRequest(await body(request)));
     if (request.method === "POST" && parts[1] === "access-requests" && parts[3] === "decision") {
       return json(response, 200, organization.decideAccessRequest(parts[2], await body(request)));
+    }
+    if (request.method === "POST" && parts[1] === "staffing-requests" && parts[3] === "decision") {
+      return json(response, 200, workflow.decideStaffingRequest(parts[2], await body(request)));
     }
     if (request.method === "POST" && parts[1] === "integration-requests" && parts[3] === "decision") {
       return json(response, 200, await organization.decideCodeIntegration(parts[2], await body(request), codeIntegrationExecutor));

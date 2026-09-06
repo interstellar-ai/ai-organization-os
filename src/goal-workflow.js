@@ -23,11 +23,15 @@ export function validateQualityReview(value, criteria) {
 }
 
 // Model output describes work, never permissions, tools, filesystem paths, or state.
-export function validateGoalPlan(value, employees) {
+export function validateGoalPlan(value, employees, templates = []) {
   const invalid = (reason) => { throw new Error(`Invalid goal plan: ${reason}`); };
   if (!value || !text(value.summary) || !strings(value.successCriteria) || !Array.isArray(value.assumptions)
     || value.assumptions.length > 10 || !value.assumptions.every((v) => text(v, 2000))) invalid("summary and success criteria are required");
-  if (!Array.isArray(value.projects) || value.projects.length > 5 || !Array.isArray(value.tasks) || !value.tasks.length || value.tasks.length > 16) invalid("use at most five projects and sixteen tasks");
+  const staffingInput = value.staffingRequests ?? [];
+  if (!Array.isArray(staffingInput) || staffingInput.length > 5) invalid("use at most five staffing requests");
+  if (!Array.isArray(value.projects) || value.projects.length > 5 || !Array.isArray(value.tasks) || value.tasks.length > 16) invalid("use at most five projects and sixteen tasks");
+  if (!value.tasks.length && !staffingInput.length) invalid("tasks or staffing requests are required");
+  if (staffingInput.length && (value.tasks.length || value.projects.length)) invalid("resolve staffing before proposing projects and tasks");
   const keys = new Set();
   const key = (v) => {
     if (typeof v !== "string" || !/^[a-z][a-z0-9_-]{0,39}$/.test(v) || keys.has(v)) invalid("unique simple keys are required");
@@ -37,6 +41,18 @@ export function validateGoalPlan(value, employees) {
   const projects = value.projects.map((p) => {
     if (!p || !text(p.title, 180) || !text(p.objective) || !strings(p.successCriteria)) invalid("invalid project");
     return { key: key(p.key), title: p.title, objective: p.objective, successCriteria: p.successCriteria };
+  });
+  const staffingRequests = staffingInput.map((request) => {
+    if (!request || !text(request.name, 120) || !text(request.reason, 3000)
+      || !Array.isArray(request.expectedWorkTypes) || !request.expectedWorkTypes.length || request.expectedWorkTypes.length > 5) invalid("invalid staffing request");
+    const template = templates.find((item) => item.id === request.templateId);
+    const manager = employees.find((item) => item.id === request.managerAgentId);
+    if (!template) invalid("staffing request must use an existing job template");
+    if (!manager) invalid("staffing request must use an existing manager");
+    if (!request.expectedWorkTypes.every((workType) => Object.hasOwn(WORK_TYPES, workType)
+      && template.capabilities.includes(WORK_TYPES[workType].capability))) invalid("staffing template lacks a required capability");
+    return { key: key(request.key), templateId: template.id, name: request.name.trim(), reason: request.reason.trim(),
+      expectedWorkTypes: [...new Set(request.expectedWorkTypes)], managerAgentId: manager.id };
   });
   const tasks = value.tasks.map((t) => {
     if (!t || !text(t.title, 180) || !text(t.instructions, 12000) || !text(t.deliverable, 2000) || !strings(t.acceptanceCriteria)) invalid("invalid task");
@@ -69,7 +85,7 @@ export function validateGoalPlan(value, employees) {
   for (const t of tasks.filter((t) => t.workType === "review")) {
     if (t.dependsOn.some((k) => tasks.find((item) => item.key === k).assignedAgentId === t.assignedAgentId)) invalid("reviewer must differ from the author of its dependencies");
   }
-  return { summary: value.summary, successCriteria: value.successCriteria, assumptions: value.assumptions, projects, tasks };
+  return { summary: value.summary, successCriteria: value.successCriteria, assumptions: value.assumptions, staffingRequests, projects, tasks };
 }
 
 function progress(tasks) {
@@ -117,6 +133,12 @@ export class GoalWorkflow {
       title: `Plan: ${goal.title}`, description: goal.description || goal.title,
       workType: "general", routing: { requiredCapability: "iterate" },
       acceptanceCriteria: ["A validated plan or explicit clarification is returned"] };
+    if (old && message) org.store.update((state) => {
+      for (const request of state.staffingRequests.filter((item) => item.goalId === goalId && item.status === "pending")) {
+        Object.assign(request, { status: "superseded", decidedAt: now(), decidedBy: "system", decisionReason: "The Founder requested a revised CEO plan." });
+      }
+      return state;
+    });
     const task = old ? org.updateTask(old.id, { ...fields, executor: fields.toolName, error: null, evidence: [],
       messages: [...old.messages, ...(message ? [{ role: "founder", content: message, createdAt: now() }] : [])],
       executionHistory: [...old.executionHistory, { attempt: old.attempts, status: old.status, output: old.output, evidence: old.evidence, error: old.error, endedAt: now() }] }) : org.createTask(fields);
@@ -132,8 +154,10 @@ export class GoalWorkflow {
     const org = this.organization;
     const goal = org.getGoal(task.goalId);
     if (goal.planningTaskId !== task.id || goal.approvedPlanId || agent.jobType !== "ai_ceo") throw new Error("Planning task identity is invalid");
-    const employees = org.list("agents").map(({ id, name, jobType, capabilities }) => ({ id, name, jobType, capabilities }));
+    const employees = org.list("agents").map(({ id, name, jobType, department, capabilities }) => ({ id, name, jobType, department, capabilities }));
+    const templates = org.list("jobTemplates").map(({ id, name, jobType, department, capabilities }) => ({ id, name, jobType, department, capabilities }));
     const schemaExample = { summary: "Plan rationale", successCriteria: ["Measurable goal outcome"], assumptions: ["Explicit assumption"],
+      staffingRequests: [],
       projects: [{ key: "project_one", title: "A bounded project", objective: "What this project achieves", successCriteria: ["Project acceptance condition"] }],
       tasks: [{ key: "task_one", projectKey: "project_one", title: "Produce a concrete deliverable", workType: "product_strategy", executionMode: "document",
         assignedAgentId: "an exact employee id from the roster", instructions: "Concrete work instructions", deliverable: "Named output",
@@ -144,20 +168,56 @@ export class GoalWorkflow {
       "Otherwise deliver exactly one plan.json artifact using the following JSON structure. The host validates and materializes this only after Founder approval.",
       "Use zero projects and null projectKey for simple work. Use 1-5 meaningful projects and at most 16 tasks for larger goals. Every project must contain tasks. Avoid unnecessary decomposition.",
       "Choose actual employees from the roster with a compatible capability for each workType. Use unique simple keys and an acyclic dependsOn list of task keys, including cross-project dependencies when necessary.",
+      "If a necessary capability has no suitable employee, do not invent an employee or assign incompatible work. If an existing job template has the capability, return only staffingRequests with no projects or tasks. Each request must use exact template and manager IDs, explain the recurring capability gap, and list compatible expectedWorkTypes. The Founder must approve hiring, after which you will replan with the new roster.",
+      "Do not request staffing merely to add capacity when a compatible employee already exists. If no existing template can fill an essential gap, use needs_input and ask the Founder to create or approve a job definition.",
       "Document mode can write product briefs, textual designs, analysis of supplied context, content or sales drafts and operations plans. It cannot browse, publish or contact people.",
       "Code mode is only for software_development. A Founder must select its protected repository. Code changes remain in isolated worktrees; applying them and chaining code changes is not automated.",
       "Use external mode for essential unavailable actions such as live research, image generation, sending, publishing or deployment; these tasks will remain blocked. Do not replace the business goal with merely writing a plan and claim it achieved.",
       "Use dependencies to pass necessary accepted artifacts between employees. Plan confirmation explicitly authorizes those handoffs within this goal, not access to other organizational data.",
       "Include explicit assumptions, realistic deliverables, acceptance criteria and a final review task when appropriate. Do not invent budgets, deadlines, sources, credentials, permissions or employees.",
       JSON.stringify(schemaExample),
-      JSON.stringify({ goal: { title: goal.title, description: goal.description, metrics: goal.metrics }, employees,
+      JSON.stringify({ staffingExample: { key: "research_specialist", templateId: "an exact template id", name: "Research Specialist", reason: "Why this recurring role is required", expectedWorkTypes: ["research"], managerAgentId: "an exact employee id" } }),
+      JSON.stringify({ goal: { title: goal.title, description: goal.description, metrics: goal.metrics }, employees, jobTemplates: templates,
         workTypes: Object.fromEntries(Object.entries(WORK_TYPES).map(([k, v]) => [k, { capability: v.capability }])) })
     ].join("\n");
     const output = await this.executor.execute({ task: { ...task, description: instructions }, agent });
     if (output.outcome !== "delivered") return { ...output, kind: "goal_plan" };
     if (output.artifacts.length !== 1 || output.artifacts[0].filename !== "plan.json") throw new Error("Planner must return exactly one plan.json artifact");
-    const plan = validateGoalPlan(JSON.parse(output.artifacts[0].content), employees);
-    return { ...output, kind: "goal_plan", plan, proposalId: id("proposal") };
+    const plan = validateGoalPlan(JSON.parse(output.artifacts[0].content), employees, templates);
+    const proposalId = id("proposal");
+    return { ...output, kind: "goal_plan", plan, proposalId };
+  }
+
+  commitPlanningResult(taskId, leaseId, patch) {
+    const org = this.organization;
+    let result;
+    org.store.update((state) => {
+      const task = state.tasks.find((item) => item.id === taskId);
+      if (!task) throw new Error("Task not found");
+      if (task.status !== "running" || task.leaseId !== leaseId) {
+        const error = new Error("Task lease is stale; executor output was discarded");
+        error.code = "STALE_TASK_LEASE";
+        throw error;
+      }
+      Object.assign(task, patch, { updatedAt: now() });
+      const plan = patch.output?.plan;
+      if (patch.status === "awaiting_review" && plan?.staffingRequests?.length) {
+        for (const request of state.staffingRequests.filter((item) => item.goalId === task.goalId && item.status === "pending")) {
+          Object.assign(request, { status: "superseded", decidedAt: now(), decidedBy: "system", decisionReason: "A newer CEO staffing proposal replaced this request." });
+        }
+        for (const request of plan.staffingRequests) state.staffingRequests.push({ id: id("staffing"), goalId: task.goalId,
+          planningTaskId: task.id, proposalId: patch.output.proposalId, requestedByAgentId: task.assignedAgentId, status: "pending", createdAt: now(),
+          templateId: request.templateId, proposedName: request.name, reason: request.reason,
+          expectedWorkTypes: request.expectedWorkTypes, managerAgentId: request.managerAgentId,
+          decidedAt: null, decidedBy: null, decisionReason: null, createdAgentId: null });
+        state.events.push({ id: id("event"), type: "staffing.proposed", createdAt: now(),
+          payload: { goalId: task.goalId, proposalId: patch.output.proposalId, requestCount: plan.staffingRequests.length } });
+      }
+      org.syncGoalStatus(state, task.goalId);
+      result = task;
+      return state;
+    });
+    return result;
   }
 
   approvePlan(goalId, input = {}) {
@@ -171,7 +231,8 @@ export class GoalWorkflow {
     const planning = goal.planningTaskId && org.getTask(goal.planningTaskId);
     if (planning?.status !== "awaiting_review" || planning.output?.proposalId !== input.proposalId || !planning.evidence.length) throw new Error("Plan is not ready or proposal is stale");
     if (input.controlledAutonomy !== true) throw new Error("Controlled autonomy consent is required");
-    const plan = validateGoalPlan(planning.output.plan, org.list("agents"));
+    const plan = validateGoalPlan(planning.output.plan, org.list("agents"), org.list("jobTemplates"));
+    if (plan.staffingRequests.length) throw new Error("Resolve staffing proposals and replan before approving work");
     // Prepare all changes on an isolated copy. Validation failure writes nothing.
     let draft = org.store.read();
     const stagedStore = { read: () => structuredClone(draft), update: (fn) => { draft = fn(structuredClone(draft)); return draft; } };
@@ -217,6 +278,52 @@ export class GoalWorkflow {
     org.syncGoalStatus(draft, goalId);
     org.store.update(() => draft);
     return this.summarizeGoal(goalId);
+  }
+
+  decideStaffingRequest(requestId, input = {}) {
+    if (!text(input.reason, 1000)) throw new Error("Decision reason is required");
+    if (!["approved", "rejected"].includes(input.decision)) throw new Error("Decision must be approved or rejected");
+    const org = this.organization;
+    let goalId;
+    let proposalId;
+    let createdAgent = null;
+    org.store.update((state) => {
+      const request = state.staffingRequests.find((item) => item.id === requestId);
+      if (!request) throw new Error("Staffing request not found");
+      if (request.status !== "pending") throw new Error("Staffing request is no longer pending");
+      const goal = state.goals.find((item) => item.id === request.goalId);
+      const planning = state.tasks.find((item) => item.id === request.planningTaskId);
+      if (!goal || goal.approvedPlanId || planning?.status !== "awaiting_review"
+        || planning.output?.proposalId !== request.proposalId) throw new Error("Staffing proposal is stale");
+      goalId = request.goalId;
+      proposalId = request.proposalId;
+      if (input.decision === "approved") {
+        const template = state.jobTemplates.find((item) => item.id === request.templateId);
+        const manager = state.agents.find((item) => item.id === request.managerAgentId);
+        if (!template) throw new Error("Job template not found");
+        if (!manager) throw new Error("Manager not found");
+        const timestamp = now();
+        createdAgent = { id: id("agent"), name: request.proposedName, templateId: template.id, role: template.jobType,
+          jobType: template.jobType, department: template.department, managerId: manager.id,
+          description: template.description || "", responsibilities: [...(template.responsibilities || [])],
+          capabilities: [...(template.capabilities || [])], projectIds: [], status: "idle", createdAt: timestamp, updatedAt: timestamp };
+        state.agents.push(createdAgent);
+        request.createdAgentId = createdAgent.id;
+        state.events.push({ id: id("event"), type: "agent.created", createdAt: timestamp,
+          payload: { agentId: createdAgent.id, name: createdAgent.name, source: "approved_staffing_request", staffingRequestId: request.id } });
+      }
+      Object.assign(request, { status: input.decision, decidedAt: now(), decidedBy: "Founder", decisionReason: input.reason.trim() });
+      state.events.push({ id: id("event"), type: `staffing.${input.decision}`, createdAt: now(),
+        payload: { staffingRequestId: request.id, goalId: request.goalId, createdAgentId: request.createdAgentId } });
+      return state;
+    });
+    const siblings = org.list("staffingRequests").filter((item) => item.goalId === goalId && item.proposalId === proposalId);
+    let planningTask = null;
+    if (!siblings.some((item) => item.status === "pending")) {
+      const decisions = siblings.map((item) => `${item.proposedName}: ${item.status}${item.createdAgentId ? ` as ${item.createdAgentId}` : ""}`).join("; ");
+      planningTask = this.startPlanning(goalId, { message: `Founder staffing decisions: ${decisions}. Replan the goal using the current employee roster and do not assume unapproved hires.` });
+    }
+    return { request: org.list("staffingRequests").find((item) => item.id === requestId), createdAgent, planningTask };
   }
 
   configureCodeTask(taskId, input) {
@@ -507,13 +614,16 @@ export class GoalWorkflow {
     const tasks = org.list("tasks").filter((t) => t.goalId === goalId && t.planId && t.planId === goal.approvedPlanId);
     const delivery = progress(tasks);
     const report = goal.finalReportTaskId ? org.list("tasks").find((t) => t.id === goal.finalReportTaskId) : null;
+    const currentStaffing = org.list("staffingRequests").filter((item) => item.goalId === goalId && item.proposalId === planningTask.output?.proposalId);
     const executionStatus = goal.approvedPlanId ? delivery.status === "delivered" && goal.autonomyPolicy
       ? report?.status === "completed" ? "delivered" : ["blocked", "failed"].includes(report?.status) || goal.finalReportStatus === "blocked" ? "blocked" : "reporting"
-      : delivery.status : planningTask.status === "awaiting_review" ? "awaiting_plan_approval"
+      : delivery.status : planningTask.status === "awaiting_review" && currentStaffing.some((item) => item.status === "pending") ? "awaiting_staffing_approval"
+      : planningTask.status === "awaiting_review" ? "awaiting_plan_approval"
       : planningTask.status === "needs_input" ? "needs_input" : ["pending", "running"].includes(planningTask.status) ? "planning" : "blocked";
-    return { ...goal, planningTask, finalReport: report, executionStatus, progress: { ...delivery, counts: tasks.reduce((all, t) => ({ ...all, [t.status]: (all[t.status] || 0) + 1 }), {}) },
+    return { ...goal, planningTask, staffingRequests: currentStaffing, finalReport: report, executionStatus, progress: { ...delivery, counts: tasks.reduce((all, t) => ({ ...all, [t.status]: (all[t.status] || 0) + 1 }), {}) },
       tasks, projects: org.list("projects").filter((p) => p.goalId === goalId).map((p) => this.summarizeProject(p.id)),
-      evidence: tasks.flatMap((t) => t.evidence || []), nextAction: !goal.approvedPlanId ? "Review the CEO proposal or answer its questions."
+      evidence: tasks.flatMap((t) => t.evidence || []), nextAction: executionStatus === "awaiting_staffing_approval" ? "Review the CEO staffing requests. Work planning resumes after every staffing decision."
+        : !goal.approvedPlanId ? "Review the CEO proposal or answer its questions."
         : executionStatus === "reporting" ? "The AI CEO is preparing the final evidence and outcome report."
           : delivery.status === "delivered" && executionStatus === "blocked" ? "The work is complete, but the CEO report is blocked. Review its error or runtime availability."
           : delivery.status === "delivered" ? "Review the CEO report. Delivery is complete; business outcomes remain separately evidence-based."

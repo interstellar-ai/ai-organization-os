@@ -13,6 +13,7 @@ const state = {
   policies: [],
   jobTemplates: [],
   accessRequests: [],
+  staffingRequests: [],
   integrationRequests: [],
   externalActions: [],
   connectors: [],
@@ -114,6 +115,7 @@ function goalCard(goal) {
 
 function renderHome() {
   const pending = [
+    ...state.staffingRequests.filter((request) => request.status === "pending"),
     ...state.accessRequests.filter((request) => request.status === "pending"),
     ...state.integrationRequests.filter((request) => request.status === "pending"),
     ...state.externalActions.filter((request) => request.status === "pending")
@@ -131,6 +133,7 @@ function renderHome() {
   ].join("");
 
   const attention = [
+    ...state.staffingRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `CEO proposes hiring ${request.proposedName}`, note: state.jobTemplates.find((template) => template.id === request.templateId)?.name || "Job template", action: "Review" })),
     ...state.accessRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${agentById(request.requesterAgentId)?.name || "Employee"} requests ${request.action}`, note: assetById(request.assetId)?.name || "Unknown asset", action: "Approval" })),
     ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Review" })),
     ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: state.tasks.find((task) => task.id === request.taskId)?.title || "External work", action: "Review" })),
@@ -423,13 +426,21 @@ function renderAccess() {
 }
 
 function renderApprovals() {
+  const staffingItems = state.staffingRequests.slice().reverse();
   const accessItems = state.accessRequests.slice().reverse();
   const integrations = state.integrationRequests.slice().reverse();
   const externalActions = state.externalActions.slice().reverse();
-  const pending = [...accessItems, ...integrations, ...externalActions].filter((request) => request.status === "pending").length;
+  const pending = [...staffingItems, ...accessItems, ...integrations, ...externalActions].filter((request) => request.status === "pending").length;
   const navCount = document.querySelector("#approvalNavCount");
   navCount.textContent = pending;
   navCount.classList.toggle("hidden", pending === 0);
+  const staffingCards = staffingItems.map((request) => {
+    const template = state.jobTemplates.find((item) => item.id === request.templateId);
+    const manager = agentById(request.managerAgentId);
+    const goal = state.goals.find((item) => item.id === request.goalId);
+    const created = agentById(request.createdAgentId);
+    return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">STAFFING PROPOSAL</span><h3>Hire ${escapeHtml(request.proposedName)}</h3></div><span class="status ${escapeHtml(request.status)}">${escapeHtml(titleize(request.status))}</span></div><p>${escapeHtml(request.reason)}</p><div class="approval-context"><div class="detail-field"><span>Job template</span><strong>${escapeHtml(template?.name || "Unavailable")}</strong></div><div class="detail-field"><span>Reports to</span><strong>${escapeHtml(manager?.name || "Unavailable")}</strong></div><div class="detail-field"><span>Goal</span><strong>${escapeHtml(goal?.title || "Unavailable")}</strong></div><div class="detail-field"><span>Expected work</span><strong>${escapeHtml(request.expectedWorkTypes.map(titleize).join(", "))}</strong></div></div><p>Capabilities: ${escapeHtml(template?.capabilities?.map(titleize).join(", ") || "Unavailable")}</p><p class="notice">Approval creates one employee from this existing template and asks the CEO to replan after all staffing decisions. Existing policies calculate default access; this decision creates no temporary or project-specific permission grant.</p>${created ? `<p>Created employee: <strong>${escapeHtml(created.name)}</strong></p>` : ""}${request.status === "pending" ? decisionForm("staffing", request.id) : decisionNote(request)}</article>`;
+  });
   const accessCards = accessItems.map((request) => {
     const agent = agentById(request.requesterAgentId);
     const asset = assetById(request.assetId);
@@ -445,12 +456,13 @@ function renderApprovals() {
     const connector = state.connectors.find((item) => item.type === action.connectorType);
     return `<article class="approval-card"><div class="approval-top"><div><span class="section-kicker">EXTERNAL ACTION</span><h3>${escapeHtml(task?.title || titleize(action.connectorType))}</h3></div><span class="status ${escapeHtml(action.status)}">${escapeHtml(titleize(action.status))}</span></div><p>Approve only if this exact payload and destination are correct. ${action.connectorType === "web_research" ? "This action reads public sources." : "This action may change an external system."}</p><div class="approval-context"><div class="detail-field"><span>Connector</span><strong>${escapeHtml(titleize(action.connectorType))}</strong></div><div class="detail-field"><span>Operation</span><strong>${escapeHtml(action.operation)}</strong></div><div class="detail-field"><span>Risk</span><strong>${escapeHtml(action.risk)}</strong></div><div class="detail-field"><span>Runtime</span><strong>${connector?.configured ? "Ready" : "Not configured"}</strong></div></div><details open><summary>Exact action payload</summary><pre>${escapeHtml(JSON.stringify(action.payload, null, 2))}</pre></details>${action.error ? `<p>${escapeHtml(action.error)}</p>` : ""}${action.result ? `<p>${escapeHtml(action.result.summary)} · receipt ${escapeHtml(action.result.receiptId)}</p>` : ""}${action.status === "pending" ? decisionForm("external", action.id, !connector?.configured) : decisionNote(action)}</article>`;
   });
-  const cards = [...externalCards, ...integrationCards, ...accessCards];
+  const cards = [...staffingCards, ...externalCards, ...integrationCards, ...accessCards];
   document.querySelector("#approvalList").innerHTML = cards.length ? cards.join("") : empty("No approval requests have been created.");
 }
 
 function decisionForm(type, id, approvalDisabled = false) {
-  return `<form class="approval-decision-form" data-decision-type="${escapeHtml(type)}" data-decision-id="${escapeHtml(id)}"><label>Founder decision note<input name="reason" required maxlength="1000" placeholder="Why you approve or reject this exact action" /></label><div class="approval-actions"><button class="reject-button" name="decision" value="rejected" type="submit">Reject</button><button class="primary-button" name="decision" value="approved" type="submit" ${approvalDisabled ? "disabled" : ""}>Approve exact action</button></div></form>`;
+  const staffing = type === "staffing";
+  return `<form class="approval-decision-form" data-decision-type="${escapeHtml(type)}" data-decision-id="${escapeHtml(id)}"><label>Founder decision note<input name="reason" required maxlength="1000" placeholder="Why you approve or reject this ${staffing ? "hire" : "exact action"}" /></label><div class="approval-actions"><button class="reject-button" name="decision" value="rejected" type="submit">Reject</button><button class="primary-button" name="decision" value="approved" type="submit" ${approvalDisabled ? "disabled" : ""}>${staffing ? "Approve hire" : "Approve exact action"}</button></div></form>`;
 }
 
 function decisionNote(item) {
@@ -510,11 +522,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects, integrationRequests, externalActions, connectors] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, jobTemplates, projects, integrationRequests, externalActions, connectors });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, jobTemplates, projects, integrationRequests, externalActions, connectors });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -741,10 +753,13 @@ document.querySelector("#approvalList").addEventListener("submit", async (event)
   const buttons = [...form.querySelectorAll("button")];
   buttons.forEach((button) => { button.disabled = true; });
   try {
-    const endpoint = form.dataset.decisionType === "integration" ? "integration-requests" : "external-actions";
+    const endpoint = form.dataset.decisionType === "integration" ? "integration-requests"
+      : form.dataset.decisionType === "staffing" ? "staffing-requests" : "external-actions";
     await api(`/api/${endpoint}/${form.dataset.decisionId}/decision`, { method: "POST",
       body: JSON.stringify({ decision: submitter.value, reason: new FormData(form).get("reason") }) });
-    toast(submitter.value === "approved" ? "Approved action completed or safely queued." : "Action rejected without execution.");
+    toast(form.dataset.decisionType === "staffing"
+      ? submitter.value === "approved" ? "Employee hired. The CEO will replan after all staffing decisions." : "Hiring rejected. The CEO will revise the plan after all staffing decisions."
+      : submitter.value === "approved" ? "Approved action completed or safely queued." : "Action rejected without execution.");
     await refreshData({ quiet: true });
   } catch (error) { toast(error.message, true); }
   finally { buttons.forEach((button) => { button.disabled = false; }); }

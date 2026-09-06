@@ -3,7 +3,7 @@
 This is a runnable first version of an AI Organization OS. It validates the smallest goal-driven organization loop:
 
 ```text
-Founder goal → CEO proposal → Founder approval → employee execution → independent review and bounded revision → CEO report
+Founder goal → CEO plan or staffing proposal → Founder approval → employee execution → independent review and bounded revision → CEO report
 ```
 
 ![AI Organization OS Founder Command Center](docs/images/founder-command-center.png)
@@ -29,7 +29,7 @@ codex login
 
 The Projects page accepts general Founder work requests across product, research, design, software, content, sales, operations, and general work. The MVP classifies and routes requests to an employee. Non-software employees use Codex to produce actual text documents, ask clarifying questions, or report a blocker. Software work uses the separate protected coding executor. No separately billed Responses API integration is required; Codex account usage limits still apply.
 
-Start on **Home** with an outcome and constraints. The AI CEO proposes projects, employee assignments, deliverables, and dependencies, or asks clarifying questions. Review the proposal in **Goals** and choose **Confirm plan and start work**. Only then does the system create real **Projects** and queue employee tasks. Simple goals may use direct tasks without a project.
+Start on **Home** with an outcome and constraints. The AI CEO proposes projects, employee assignments, deliverables, and dependencies, or asks clarifying questions. If a required role is missing, it may instead propose an employee from an existing job template. The Founder approves or rejects every hire in **Approvals**; only an approved decision creates an employee, and the CEO then replans against the current roster. Review a complete work proposal in **Goals** and choose **Confirm plan and start work**. Only then does the system create real **Projects** and queue employee tasks. Simple goals may use direct tasks without a project.
 
 Plan confirmation activates controlled autonomy for the displayed scope and budget. Internal document tasks are independently reviewed and can be revised automatically up to twice. Passing work unlocks accepted dependency handoffs; exceptions return to the Founder. Code deliveries require Founder acceptance and a second exact integration approval before they can enter the tested `codex/integration` branch. External work requires a configured connector and exact-payload approval. After all required work is accepted—and code is integrated—the AI CEO generates a final evidence and outcome report. **New work request** remains available for standalone work. See [Goal planning](docs/GOAL_PLANNING.md), [Controlled autonomy](docs/CONTROLLED_AUTONOMY.md), [Code integration](docs/CODE_INTEGRATION.md), [External connectors](docs/EXTERNAL_CONNECTORS.md), and [Durable runtime](docs/DURABLE_RUNTIME.md).
 
@@ -55,6 +55,8 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Request CEO planning or clarification | `POST /api/goals/:id/plan` |
 | Revise an unapproved proposal | `POST /api/goals/:id/replan` |
 | Approve the current proposal and create work | `POST /api/goals/:id/approve-plan` |
+| Staffing proposals | `GET /api/staffing-requests` |
+| Approve or reject a template-based hire | `POST /api/staffing-requests/:id/decision` |
 | Approve a bounded model-run extension | `POST /api/goals/:id/extend-budget` |
 | Projects, progress, and associated tasks | `GET /api/projects` |
 | Bind a blocked plan code task to an explicit codebase | `POST /api/tasks/:id/configure-code` |
@@ -89,7 +91,7 @@ The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `s
 ## Current boundaries
 
 - The scheduler checks every second for pending tasks whose dependencies are complete, then atomically claims them with persisted leases. It runs by priority, with at most two active tasks and one per employee. Controlled plans retry transient provider failures up to three attempts. Interrupted or expired idempotent work is safely requeued.
-- New goal plans use real Codex reasoning and host-validated project/task graphs. Up to five projects and sixteen tasks can be proposed. Clarification and plan revision do not launch delivery work. Approval is atomic and repeat-safe.
+- New goal plans use real Codex reasoning and host-validated project/task graphs. Up to five projects and sixteen tasks can be proposed. If a role is missing, the CEO may return up to five staffing requests that reference existing templates and managers instead of work. Hiring requires an explicit Founder decision; once all requests are decided, replanning starts automatically. Clarification, staffing and plan revision do not launch delivery work.
 - Legacy fixed five-stage workflows are preserved as historical data; new Home and goal-plan requests use the CEO planner. Approved plans cannot yet be edited in place.
 - General execution returns Markdown, text, CSV, or JSON from supplied context. It does not retrieve private assets or memories automatically or directly hold external credentials. Live research, email, CRM creation and webhook publishing run through separate host-controlled connectors after an exact action preview and Founder approval. Image generation remains unconnected.
 - General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct. Approved plan documents require independent criterion review and may auto-revise twice; standalone and escalated work requires Founder review. Feedback preserves prior versions.
@@ -99,6 +101,7 @@ The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `s
 - Every external action creates a one-use scoped grant and audit trail. Side-effect failures after invocation are marked `uncertain`; the system requires destination verification instead of automatic retry.
 - Job templates provide role inheritance. Projects now own delivery tasks, but general project-scoped asset policies remain deferred. Plan confirmation authorizes only the displayed assignments and accepted dependency-artifact handoffs within that goal.
 - The Employees page can hire an employee from a job template after previewing inherited responsibilities, capabilities, matching policies, and default access. Role defaults are copied at hire time; template editing and employee overrides are not yet exposed.
+- CEO-proposed hiring uses the same template inheritance. Approval creates no temporary or project-specific grant: effective access still comes from current policies, task scope and any separately approved access request. Employees cannot create themselves or directly approve staffing.
 - Protected tools require employee identity, an active assigned task, a non-expired task capability, and an allowed access-policy decision. The authorized asset catalog hides assets outside the employee's allowed or requestable policy scope.
 - `code.codex` requires `read`, `modify`, and `execute` permission on the assigned source-code asset before Codex starts. Each run uses a detached local Git worktree, the `workspace-write` Codex sandbox, a sanitized child-process environment, bounded output, and a timeout.
 - Code tasks require explicit codebase selection and existing permissions. Accepted deliveries create a second approval request. Approval scans changed files for credential patterns, commits the reviewed worktree, cherry-picks it into `codex/integration`, and runs an allowlisted test command. It cannot push, merge `main` or deploy. Downstream code waits for successful integration and starts from that branch.

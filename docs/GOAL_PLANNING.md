@@ -4,7 +4,7 @@
 
 Goals describe desired outcomes. Projects organize bounded efforts toward those outcomes. Tasks are concrete employee work orders. Simple goals may create direct tasks without an artificial project layer.
 
-The Founder submits an outcome and constraints on Home. A protected `goal.plan` task invokes the AI CEO through the existing Codex-backed general runtime. The CEO asks questions when essential context is missing, or produces a machine-readable project and task proposal. It does not execute those tasks itself.
+The Founder submits an outcome and constraints on Home. A protected `goal.plan` task invokes the AI CEO through the existing Codex-backed general runtime. The CEO asks questions when essential context is missing, produces a machine-readable project and task proposal, or proposes template-based staffing when an essential role is missing. It does not execute downstream work or create employees itself.
 
 The Goals page shows goal success criteria, assumptions, project objectives, employee assignments, deliverables, acceptance criteria, execution modes, and dependencies. The Founder can reply or request changes. **Confirm plan and start work** creates the approved projects and tasks atomically; ready tasks then run automatically.
 
@@ -19,11 +19,18 @@ Projects display their coordinator, success criteria, tasks, blockers, and accep
 ## Proposal validation and confirmation
 
 - The host accepts at most five projects and sixteen tasks, bounded strings, unique task/project keys, valid employee identifiers, and compatible work-type capabilities.
+- A staffing-only proposal may contain at most five requests and no projects or tasks. Every request must reference an existing job template, an existing manager, compatible expected work types, a proposed name, and a concrete reason.
 - Dependencies must refer to tasks in the proposal and form an acyclic graph. Projects cannot be empty. Simple direct-task plans use no projects.
 - The model proposes only work, not tool names, permissions, credentials, file paths, or application statuses. The host chooses adapters and task scopes.
 - Confirmation requires the current host-generated proposal identifier and an awaiting-approval planning result with evidence. Employee capabilities are rechecked.
 - All project/task records are prepared in an isolated state copy and saved once. Invalid confirmation writes no partial projects. Repeating a successful confirmation returns the existing result without duplicate tasks.
 - Replies invalidate approval of the previous proposal. Approved plans cannot yet be revised in place; use a new goal for material scope changes. Legacy work is preserved and is not automatically re-executed.
+
+## Staffing gate
+
+Staffing is a separate Founder decision, not plan confirmation. A pending request appears in Approvals with the exact template, proposed employee name, manager, goal, expected work and reason. Approval copies the template's role, department, responsibilities and capabilities into one employee. Existing policies calculate default access; hiring does not create a temporary or project-specific permission grant. Rejection creates no employee.
+
+When a proposal contains multiple hires, the CEO waits until every request is decided. The final decision automatically queues a new planning run with the approved employees and rejected roles recorded in the planning conversation. The old staffing proposal cannot be approved as a work plan, and stale or already-decided requests fail closed. Employees cannot self-create or approve staffing.
 
 ## Modes and limitations
 
@@ -42,6 +49,8 @@ Planning and worker execution use transactional local SQLite state, persisted le
 - `POST /api/goals` creates a goal record; Home follows it with planning.
 - `POST /api/goals/:id/plan` queues planning; optional `message` clarifies or revises an unapproved plan. `replan` is an alias for this behavior, not the legacy deterministic planner.
 - `POST /api/goals/:id/approve-plan` accepts `proposalId`, explicit `controlledAutonomy: true` consent, and optional `codeAssets` mapping task keys to explicit existing asset IDs. Omitting a code asset leaves that task blocked. Confirmation grants no new asset permissions.
+- `GET /api/staffing-requests` returns the staffing decision history.
+- `POST /api/staffing-requests/:id/decision` accepts `approved` or `rejected` plus a required Founder reason. Approval creates one template-based employee; after all requests in that proposal are decided, the CEO is queued to replan.
 - `POST /api/goals/:id/extend-budget` accepts a budget-blocked `taskId`, `additionalModelRuns`, and a required reason. It increases only the invocation limit and resumes that task; it grants no asset or external permission.
 - `GET /api/goals/:id/summary` includes the planning conversation, approved work, projects, delivery progress, and outcome status.
 - `GET /api/projects` returns projects with their tasks and delivery progress.

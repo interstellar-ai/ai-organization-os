@@ -1226,9 +1226,11 @@ export class Organization {
       const nextAction = status === "awaiting_quality_review" ? "An independent quality review is queued."
         : status === "awaiting_review" ? "Review the delivered files, then accept or request changes."
         : status === "needs_input" ? "Answer the employee's questions to continue." : null;
-      const result = this.updateTask(taskId, { status, output, evidence, error: null, nextAction, nextAttemptAt: null, autoRetryCount: 0,
-        leaseId: null, leaseExpiresAt: null,
-        blockedReason: status === "blocked" ? output.limitations.join(" ") : null });
+      const completion = { status, output, evidence, error: null, nextAction, nextAttemptAt: null, autoRetryCount: 0,
+        leaseId: null, leaseExpiresAt: null, blockedReason: status === "blocked" ? output.limitations.join(" ") : null };
+      const result = task.toolName === "goal.plan" && this.workflow
+        ? this.workflow.commitPlanningResult(taskId, leaseId, completion)
+        : this.updateTask(taskId, completion);
       this.recordEvent(`task.${status}`, { taskId, evidenceCount: evidence.length });
       if (status === "awaiting_quality_review") this.workflow.queueQualityReview(result);
       if (task.toolName === "delivery.review") this.workflow.applyQualityReview(result);

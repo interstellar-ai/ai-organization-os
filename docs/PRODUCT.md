@@ -81,6 +81,7 @@ The current version provides:
 - Agent registration with roles and capabilities;
 - Goal creation;
 - Model-backed CEO planning with clarification, bounded project/task proposals, dependency validation, and explicit Founder confirmation;
+- CEO detection of missing roles, bounded template-based staffing proposals, explicit Founder decisions, and automatic replanning against the updated roster;
 - Atomic and repeat-safe creation of real projects and assigned employee tasks from the current approved proposal;
 - Accepted dependency-artifact handoffs within the same approved plan, plus project and goal delivery-progress summaries;
 - Controlled autonomy consent with independent document review, up to two automatic revisions, transient provider retries, and a bounded model-run budget;
@@ -114,7 +115,7 @@ The current version provides:
 - Goal progress summaries and an audit-event stream;
 - Automated tests for planning, scheduling, evidence, memory tools, and safe failure on unknown tools.
 
-The current version uses real model reasoning for CEO planning, general document work, independent review, final reporting, and software development. Home starts CEO planning; the Founder reviews the proposal and autonomy budget in Goals before projects and delivery tasks are created. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
+The current version uses real model reasoning for CEO planning, staffing proposals, general document work, independent review, final reporting, and software development. Home starts CEO planning; the Founder reviews staffing in Approvals or reviews the complete work proposal and autonomy budget in Goals before projects and delivery tasks are created. Approved hires must use existing job templates and trigger replanning; no employee can self-create or bypass access policy. The standalone work-request classifier remains deterministic. Code integration and selected external connectors are now host-controlled, approval-gated workflows. Image generation, autonomous job-template creation, standing staffing budgets, durable multi-user storage, authenticated runtime identity, currency budgets, production isolation, general output data-flow controls, distributed workers, project-scoped asset policies, deployment, and remote Git integration remain future work. See [Goal planning](GOAL_PLANNING.md), [Controlled autonomy](CONTROLLED_AUTONOMY.md), [Code integration](CODE_INTEGRATION.md), [External connectors](EXTERNAL_CONNECTORS.md), and [Durable runtime](DURABLE_RUNTIME.md).
 
 ## Task state semantics
 

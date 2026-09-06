@@ -140,6 +140,59 @@ test("simple goals can produce direct tasks with no project", async (t) => {
   assert.equal(result.tasks[0].projectId, null);
 });
 
+test("CEO staffing proposals require Founder approval, hire from a template and trigger replanning", async (t) => {
+  const { org, workflow, goal, propose, responses, delivery, ceo } = setup(t);
+  const template = org.createJobTemplate({ name: "Research Analyst", jobType: "research_analyst", department: "Research",
+    description: "Produces source-grounded analysis.", responsibilities: ["Research", "Source validation"], capabilities: ["research"] });
+  const staffingPlan = { summary: "A dedicated research capability is required", assumptions: ["This is recurring work"],
+    successCriteria: ["Research is completed by a qualified employee"], projects: [], tasks: [],
+    staffingRequests: [{ key: "research_hire", templateId: template.id, name: "Research Specialist",
+      reason: "The current roster has no dedicated research analyst for this recurring work.", expectedWorkTypes: ["research"], managerAgentId: ceo.id }] };
+  const proposal = await propose(staffingPlan);
+  assert.equal(org.summarizeGoal(goal.id).executionStatus, "awaiting_staffing_approval");
+  assert.equal(org.list("projects").length, 0);
+  assert.equal(org.list("tasks").length, 1);
+  const request = org.list("staffingRequests")[0];
+  assert.equal(request.status, "pending");
+  assert.throws(() => workflow.approvePlan(goal.id, { proposalId: proposal.output.proposalId, controlledAutonomy: true }), /Resolve staffing/);
+  assert.throws(() => workflow.decideStaffingRequest(request.id, { decision: "approved" }), /reason/);
+
+  const decision = workflow.decideStaffingRequest(request.id, { decision: "approved", reason: "The reusable capability is justified." });
+  assert.equal(decision.request.status, "approved");
+  assert.equal(decision.createdAgent.templateId, template.id);
+  assert.deepEqual(decision.createdAgent.capabilities, ["research"]);
+  assert.equal(decision.createdAgent.managerId, ceo.id);
+  assert.equal(decision.planningTask.status, "pending");
+  assert.match(decision.planningTask.messages.at(-1).content, /Founder staffing decisions/);
+  assert.throws(() => workflow.decideStaffingRequest(request.id, { decision: "approved", reason: "Retry" }), /no longer pending/);
+
+  const revisedPlan = { summary: "Research can now proceed", assumptions: [], successCriteria: ["Research memo accepted"], projects: [],
+    staffingRequests: [], tasks: [{ key: "research", projectKey: null, title: "Research the opportunity", workType: "research",
+      executionMode: "document", assignedAgentId: decision.createdAgent.id, instructions: "Produce a source-grounded research memo",
+      deliverable: "research.md", acceptanceCriteria: ["Key claims are supported"], dependsOn: [] }] };
+  responses.push(delivery("plan.json", JSON.stringify(revisedPlan)));
+  const replanned = await org.executeTask(decision.planningTask.id);
+  assert.equal(replanned.status, "awaiting_review");
+  assert.equal(org.summarizeGoal(goal.id).executionStatus, "awaiting_plan_approval");
+  const approved = workflow.approvePlan(goal.id, { proposalId: replanned.output.proposalId, controlledAutonomy: true });
+  assert.equal(approved.tasks[0].assignedAgentId, decision.createdAgent.id);
+});
+
+test("rejecting a staffing proposal creates no employee and asks the CEO to revise", async (t) => {
+  const { org, workflow, goal, propose, ceo } = setup(t);
+  const template = org.createJobTemplate({ name: "Sales Specialist", jobType: "sales_specialist", capabilities: ["research"] });
+  const proposal = await propose({ summary: "Sales staffing proposed", assumptions: [], successCriteria: ["Sales work assigned"], projects: [], tasks: [],
+    staffingRequests: [{ key: "sales_hire", templateId: template.id, name: "Sales Specialist", reason: "A recurring sales role is proposed.",
+      expectedWorkTypes: ["sales"], managerAgentId: ceo.id }] });
+  const request = org.list("staffingRequests").find((item) => item.proposalId === proposal.output.proposalId);
+  const before = org.list("agents").length;
+  const decision = workflow.decideStaffingRequest(request.id, { decision: "rejected", reason: "Use the current operations team." });
+  assert.equal(decision.request.status, "rejected");
+  assert.equal(decision.createdAgent, null);
+  assert.equal(org.list("agents").length, before);
+  assert.equal(decision.planningTask.status, "pending");
+});
+
 test("invalid plan graphs, nonexistent employees, capabilities and self-review fail closed", (t) => {
   const { org, plan, product } = setup(t);
   const mutations = [

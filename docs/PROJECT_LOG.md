@@ -196,3 +196,11 @@ Add new entries under this heading with the date, change, decision, and verifica
 - Added Founder UI for external connector configuration, code and action approvals, connector readiness, receipts, integration status, and durable runtime status.
 - Added focused automated tests for SQLite rollback and reopening, lease recovery, pre-approval network isolation, private-address rejection, uncertain side effects, separate code-integration approval, and real temporary Git integration.
 - Kept the runtime explicitly single-node and trusted. PostgreSQL, distributed workers, authentication, managed secrets, container isolation, remote pull requests, deployment, and disaster recovery remain v1 infrastructure work.
+
+## 2026-09-06 — Founder-approved staffing loop
+
+- Extended CEO planning with a bounded staffing-only proposal for missing roles. Requests must reference existing job templates and managers, and their expected work must match template capabilities.
+- Added persistent staffing requests to the Founder approval center with proposed name, role, manager, goal, rationale, expected work and decision history.
+- Approval atomically creates one template-based employee; rejection creates none. Neither decision grants temporary or project-specific access.
+- Automatically queued CEO replanning after every request in the current staffing proposal is decided. Stale, repeated and direct work-plan approval attempts fail closed.
+- Added automated coverage for approval, rejection, template inheritance, duplicate-decision protection and the staffing-to-replanning-to-work-plan transition.
