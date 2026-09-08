@@ -354,6 +354,11 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
 .external-readiness form, .manual-fallback form { display: grid; gap: 10px; margin-top: 14px; }
 .responsibility-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
 .responsibility-grid > div { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.route-history { padding: 9px 11px; border-left: 3px solid var(--green); background: #fff; }
+.route-feedback { padding: 12px; border: 1px dashed #b67755; border-radius: 10px; background: #fffaf7; }
+.route-feedback summary { color: #8a4227; font-weight: 700; cursor: pointer; }
+.route-feedback form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.route-feedback form button { justify-self: start; }
 .manual-fallback { margin-top: 14px; padding: 14px; border: 1px dashed #c49b42; border-radius: 10px; background: #fffaf0; }
 .reject-button { min-height: 38px; padding: 0 13px; border: 1px solid #e1b8b3; border-radius: 9px; background: var(--red-soft); color: var(--red); font-weight: 700; cursor: pointer; }
 .memory-card { padding: 17px; }
@@ -427,7 +432,7 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weig
   .tabbar button { flex: 0 0 auto; }
   .welcome-row h2, .page-intro h2 { font-size: 34px; }
   .date-card { padding-left: 0; border-left: 0; }
-  .home-layout, .metric-grid, .goal-grid, .employee-grid, .settings-grid, .form-grid, .responsibility-grid { grid-template-columns: 1fr; }
+  .home-layout, .metric-grid, .goal-grid, .employee-grid, .settings-grid, .form-grid, .responsibility-grid, .route-feedback form { grid-template-columns: 1fr; }
   .goal-grid { padding: 0 14px 14px; }
   .command-panel, .attention-panel, .form-panel, .settings-grid .panel { padding: 17px; }
   .panel-heading { flex-direction: column; }

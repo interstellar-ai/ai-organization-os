@@ -118,6 +118,7 @@ The current version provides:
 - Founder-approved code integration into an isolated `codex/integration` branch with credential scanning, conflict handling, and allowlisted test gates;
 - Host-controlled live research, email, CRM, and publishing connectors with exact-payload approval, one-use grants, receipts, and uncertain-outcome handling;
 - Just-in-time external readiness with a bounded provider recommendation, alternatives, a Founder-only registration checklist, and retained organization responsibilities;
+- Constraint-aware channel rerouting that closes an unusable provider, preserves its audit history, stores only non-sensitive eligibility fields, and selects the next compatible catalog route without looping;
 - A public-URL manual result fallback that records Founder attestation without claiming automated or independent provider execution;
 - Deterministic local tools that produce structured outputs and evidence;
 - Goal progress summaries and an audit-event stream;

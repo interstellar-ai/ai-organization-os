@@ -29,46 +29,100 @@ export function inferExternalConnector(task, relatedTasks = []) {
   return null;
 }
 
-export function recommendExternalRoute(task, relatedTasks = []) {
+const commonFounderSteps = [
+  "Create the seller account using truthful legal and country information.",
+  "Complete any identity, tax or business verification requested by the provider.",
+  "Connect and verify an eligible payment account.",
+  "Accept the provider terms and confirm that the product may lawfully be sold there.",
+  "Return only the public store URL and readiness confirmations. Never paste a password, payment credential or API secret into this record."
+];
+
+const commonSystemSteps = [
+  "Finalize the customer-facing files, listing copy, price and release terms.",
+  "Prepare the exact product action for Founder approval.",
+  "Publish through a scoped provider adapter when available and retain a receipt.",
+  "Verify the public destination and continue outcome tracking."
+];
+
+const digitalStorefronts = [
+  {
+    provider: "Payhip",
+    providerUrl: "https://payhip.com/",
+    summary: "The AI organization selected Payhip as the default first-sale route for this small downloadable product.",
+    reasons: [
+      "The work package is a small one-time digital download rather than software or a subscription.",
+      "The route supports hosted product files, a checkout page and low-friction first-sale validation.",
+      "A free starting plan avoids a fixed monthly cost while demand is still unverified."
+    ],
+    tradeoff: "A simple digital storefront, but payment-account eligibility varies by country and may require a business PayPal account.",
+    sourceUrls: ["https://help.payhip.com/article/376-cant-connect-paypal", "https://help.payhip.com/article/173-how-do-i-get-paid"]
+  },
+  {
+    provider: "Ko-fi",
+    providerUrl: "https://ko-fi.com/",
+    summary: "The AI organization selected Ko-fi because it can connect a personal PayPal account and send payments directly without a platform payout threshold.",
+    reasons: [
+      "The Founder reported that only a personal PayPal account is available.",
+      "Ko-fi states that a PayPal Business account is optional and supports digital products through Ko-fi Shop.",
+      "Payments go directly to the connected PayPal account without a Ko-fi minimum payout balance."
+    ],
+    tradeoff: "Compatible with personal PayPal and direct payouts, but personal PayPal may expose the seller's legal name and email on transaction records.",
+    sourceUrls: ["https://help.ko-fi.com/hc/en-us/articles/360005285593-How-do-I-switch-to-a-PayPal-Business-account", "https://help.ko-fi.com/hc/en-us/articles/115003980093-How-do-I-get-paid"]
+  },
+  {
+    provider: "Gumroad",
+    providerUrl: "https://gumroad.com/",
+    summary: "The AI organization selected Gumroad as a broad individual-seller fallback for a hosted digital product.",
+    reasons: [
+      "Gumroad permits an individual seller profile without business registration documents.",
+      "Both personal and business PayPal accounts are accepted where PayPal payouts are available.",
+      "The platform hosts checkout and digital delivery, reducing setup work."
+    ],
+    tradeoff: "Broad individual-seller support, but payout availability is country-specific and standard payouts may have a minimum threshold.",
+    sourceUrls: ["https://gumroad.com/help/article/260-your-payout-settings-page", "https://gumroad.com/help/article/13-getting-paid.html"]
+  }
+];
+
+function digitalStorefrontRecommendation(profile = {}) {
+  const excluded = new Set((profile.excludedProviders || []).map(compact));
+  const personalPayPal = profile.accountType === "personal" && profile.paymentRail === "paypal";
+  const ordered = personalPayPal
+    ? [digitalStorefronts[1], digitalStorefronts[2], digitalStorefronts[0]]
+    : digitalStorefronts;
+  const selected = ordered.find((item) => !excluded.has(compact(item.provider)));
+  if (!selected) return null;
+  const alternatives = ordered.filter((item) => item.provider !== selected.provider && !excluded.has(compact(item.provider)))
+    .map((item) => ({ provider: item.provider, tradeoff: item.tradeoff }));
+  const rejected = digitalStorefronts.filter((item) => excluded.has(compact(item.provider)))
+    .map((item) => ({ provider: item.provider, tradeoff: "Unavailable under the Founder's recorded account or regional constraints." }));
+  return {
+    connectorType: "publishing",
+    category: "digital_download_storefront",
+    provider: selected.provider,
+    providerUrl: selected.providerUrl,
+    summary: selected.summary,
+    reasons: selected.reasons,
+    alternatives: [...alternatives, ...rejected],
+    founderSteps: commonFounderSteps,
+    systemSteps: commonSystemSteps,
+    sourceUrls: selected.sourceUrls,
+    matchedConstraints: {
+      ...(profile.countryCode ? { countryCode: profile.countryCode } : {}),
+      ...(profile.accountType ? { accountType: profile.accountType } : {}),
+      ...(profile.paymentRail ? { paymentRail: profile.paymentRail } : {})
+    },
+    knowledgeStatus: "Curated provider catalog reviewed on 2026-09-08; revalidate country support, fees and provider terms before production use."
+  };
+}
+
+export function recommendExternalRoute(task, relatedTasks = [], profile = {}) {
   const connectorType = inferExternalConnector(task, relatedTasks);
   if (!connectorType || connectorType === "web_research") return null;
   const context = taskContext(task, relatedTasks);
   const digitalDownload = connectorType === "publishing"
     && /\b(digital product|download|template|toolkit|kit|ebook|pdf|markdown|docx|csv|zip)\b/.test(context);
 
-  if (connectorType === "publishing" && digitalDownload) {
-    return {
-      connectorType,
-      category: "digital_download_storefront",
-      provider: "Payhip",
-      providerUrl: "https://payhip.com/",
-      summary: "The AI organization selected Payhip as the default first-sale route for this small downloadable product.",
-      reasons: [
-        "The work package is a small one-time digital download rather than software or a subscription.",
-        "The route supports hosted product files, a checkout page and low-friction first-sale validation.",
-        "A free starting plan avoids a fixed monthly cost while demand is still unverified."
-      ],
-      alternatives: [
-        { provider: "Gumroad", tradeoff: "Simple hosted checkout and tax handling, but the fixed and percentage fees are less attractive for a low-price test." },
-        { provider: "Lemon Squeezy", tradeoff: "Strong merchant-of-record infrastructure, but store activation and payout timing add friction to a first-sale experiment." },
-        { provider: "Ko-fi", tradeoff: "Fast direct payments and digital delivery, but its creator-support positioning is a weaker match for a focused business toolkit." }
-      ],
-      founderSteps: [
-        "Create the seller account using truthful legal and country information.",
-        "Complete any identity, tax or business verification requested by the provider.",
-        "Connect and verify an eligible payment account.",
-        "Accept the provider terms and confirm that the product may lawfully be sold there.",
-        "Return only the public store URL and readiness confirmations. Never paste a password, payment credential or API secret into this record."
-      ],
-      systemSteps: [
-        "Finalize the customer-facing files, listing copy, price and release terms.",
-        "Prepare the exact product action for Founder approval.",
-        "Publish through a scoped provider adapter when available and retain a receipt.",
-        "Verify the public destination and continue outcome tracking."
-      ],
-      knowledgeStatus: "Curated provider catalog; revalidate fees, country support and provider terms before production use."
-    };
-  }
+  if (digitalDownload) return digitalStorefrontRecommendation(profile);
 
   const definitions = {
     publishing: {
@@ -97,7 +151,7 @@ export function recommendExternalRoute(task, relatedTasks = []) {
     }
   };
   const selected = definitions[connectorType];
-  if (!selected) return null;
+  if (!selected || (profile.excludedProviders || []).map(compact).includes(compact(selected.provider))) return null;
   return {
     connectorType,
     ...selected,

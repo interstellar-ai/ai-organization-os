@@ -234,3 +234,13 @@ Add new entries under this heading with the date, change, decision, and verifica
 - Updated CEO planning instructions so an unspecified external channel receives a preceding organization-owned selection and preparation task.
 - Added Home and Project UI guidance that separates Founder-only work from AI organization responsibilities.
 - Verified 65 automated tests, including channel selection, safe registration metadata, delayed external-stage activation, outcome-evidence boundaries, and all existing workflows.
+
+## 2026-09-08 — Constraint-aware channel rerouting
+
+- Added a Founder-facing “This route is unavailable” workflow with structured reason, optional country or region code, account type, and payment method fields.
+- Added automatic provider reselection that closes the rejected action, preserves route history, updates the task blocker, and never returns to an unavailable provider.
+- Added Ko-fi as the personal-PayPal-first route and Gumroad as the next bounded fallback, with provider references, tradeoffs, and catalog freshness disclosure.
+- Kept account identifiers, email addresses, passwords, payment credentials, identity documents, and free-form personal data outside the routing record.
+- Added bounded-catalog exhaustion behavior that returns provider research to the AI CEO instead of asking the Founder to choose another platform.
+- Added automated coverage for Payhip-to-Ko-fi rerouting, safe constraint persistence, duplicate-route prevention, Ko-fi readiness, and full catalog exhaustion.
+- Verified 67 automated tests and the live local UI, including migration of the active Payhip blocker to a pending Ko-fi registration action.
