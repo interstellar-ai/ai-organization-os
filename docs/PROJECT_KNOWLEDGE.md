@@ -12,6 +12,7 @@ This directory separates stable product knowledge from changing project notes.
 - [Code integration](CODE_INTEGRATION.md): accepted worktree review, isolated integration branch, test gate, and hard deployment boundaries.
 - [External connectors](EXTERNAL_CONNECTORS.md): live research, email, CRM and publishing configuration, approval, receipts, and uncertainty handling.
 - [Durable runtime](DURABLE_RUNTIME.md): SQLite persistence, leased task claims, crash recovery, and the single-node production boundary.
+- [Controlled continuous improvement](CONTINUOUS_IMPROVEMENT.md): automatic deficiency signals, Founder-confirmed maintenance goals, CEO visibility, deduplication, and evidence-based closure.
 - [Product discovery and decisions](PRODUCT_DISCOVERY.md): confirmed product decisions, working assumptions, open questions, and design risks.
 - [Project log](PROJECT_LOG.md): canonical addresses, architecture snapshots, decisions, milestones, and verification records.
 - [Demo walkthrough](DEMO.md): privacy-safe 2–3 minute recording script for the current MVP.

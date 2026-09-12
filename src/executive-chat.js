@@ -15,12 +15,14 @@ function taskSummary(task, agents, goals, projects) {
 }
 
 export class ExecutiveChat {
-  constructor(organization, executor) {
+  constructor(organization, executor, improvementLoop = null) {
     this.organization = organization;
     this.executor = executor;
+    this.improvementLoop = improvementLoop;
   }
 
   snapshot() {
+    this.improvementLoop?.scan();
     const org = this.organization;
     const agents = org.list("agents");
     const goals = org.list("goals");
@@ -43,6 +45,11 @@ export class ExecutiveChat {
       publicAccountUrl: item.status === "completed" ? item.completion?.publicAccountUrl || null : null,
       updatedAt: item.updatedAt
     }));
+    const improvementSignals = org.list("improvementSignals")
+      .filter((item) => ["open", "goal_proposed", "in_progress", "ready_for_verification"].includes(item.status))
+      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).slice(0, 20)
+      .map(({ id, title, summary, category, severity, status, occurrenceCount, linkedGoalId, firstSeenAt, lastSeenAt }) =>
+        ({ id, title, summary: short(summary), category, severity, status, occurrenceCount, linkedGoalId, firstSeenAt, lastSeenAt }));
     return {
       generatedAt: now(),
       organization: { employeeCount: agents.length, departments: [...new Set(agents.map((agent) => agent.department))].sort() },
@@ -53,7 +60,8 @@ export class ExecutiveChat {
       projects: [...projects].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))).slice(0, 30).map((project) => ({ id: project.id, title: project.title, objective: short(project.objective), goal: goals.find((goal) => goal.id === project.goalId)?.title || null })),
       activeTasks: [...activeTasks].sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).slice(0, 50).map((task) => taskSummary(task, agents, goals, projects)),
       pendingApprovals: approvals.slice(-30),
-      externalReadiness
+      externalReadiness,
+      continuousImprovement: { summary: this.improvementLoop?.summary() || { total: improvementSignals.length }, signals: improvementSignals }
     };
   }
 

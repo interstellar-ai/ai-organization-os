@@ -18,6 +18,7 @@ const state = {
   integrationRequests: [],
   externalActions: [],
   connectors: [],
+  improvementSignals: [],
   employeeView: "directory",
   accessTab: "employees",
   selectedAssetId: null,
@@ -34,6 +35,7 @@ const pageTitles = {
   access: "Access Control",
   approvals: "Founder Decisions",
   knowledge: "Knowledge",
+  improvements: "Continuous Improvement",
   reports: "Reports",
   audit: "Audit Trail",
   settings: "Organization Settings"
@@ -179,6 +181,7 @@ function renderHome() {
   const currentStops = state.tasks.filter((task) => task.taskKind === "work"
     && ["blocked", "failed", "needs_input"].includes(task.status) && unmetDependencies(task).length === 0
     && !founderActions.some((action) => action.taskId === task.id));
+  const priorityImprovements = state.improvementSignals.filter((signal) => signal.status === "open" && ["high", "critical"].includes(signal.severity));
   const completed = state.tasks.filter((task) => task.status === "completed").length;
   const evidence = state.tasks.reduce((total, task) => total + (task.evidence?.length || 0), 0);
   const decisionCount = authorityDecisions.length + deliveryReviews.length + planReviews.length;
@@ -198,6 +201,7 @@ function renderHome() {
     ...state.integrationRequests.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: "Code integration requires approval", note: `${request.changedFiles.length} changed files → ${request.targetBranch}`, action: "Decide", page: "approvals" })),
     ...state.externalActions.filter((request) => request.status === "pending").map((request) => ({ signal: "red", title: `${titleize(request.connectorType)} action requires approval`, note: "External effect · exact payload review", action: "Decide", page: "approvals" })),
     ...founderActions.map((request) => ({ signal: "red", title: request.title, note: "Founder-only account setup · AI selected the route", action: "Complete", taskId: request.taskId })),
+    ...priorityImprovements.map((item) => ({ signal: item.severity === "critical" ? "red" : "amber", title: item.title, note: `${titleize(item.category)} · ${titleize(item.severity)} priority`, action: "Review", page: "improvements" })),
     ...currentStops.map((task) => ({ signal: "red", title: task.title, note: `${taskLocation(task)} · ${taskStopReason(task)}`, action: task.status === "needs_input" ? "Reply" : "Inspect", taskId: task.id }))
   ].slice(0, 6);
   document.querySelector("#attentionList").innerHTML = attention.length
@@ -581,6 +585,35 @@ function renderKnowledge() {
   document.querySelector("#memoryList").innerHTML = state.memories.length ? state.memories.slice().reverse().map((memory) => `<article class="memory-card"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(memory.scope)}</span><h3>${escapeHtml(memory.content)}</h3></div><span class="status">${escapeHtml(memory.source)}</span></div><div class="memory-tags">${(memory.tags || []).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div><p>Recorded ${escapeHtml(formatTime(memory.createdAt))}</p></article>`).join("") : empty("No organization knowledge has been recorded.");
 }
 
+function renderImprovements() {
+  const active = state.improvementSignals.filter((signal) => ["open", "goal_proposed", "in_progress", "ready_for_verification"].includes(signal.status));
+  const open = active.filter((signal) => signal.status === "open");
+  const linked = active.filter((signal) => ["goal_proposed", "in_progress"].includes(signal.status));
+  const ready = active.filter((signal) => signal.status === "ready_for_verification");
+  const highPriority = active.filter((signal) => ["high", "critical"].includes(signal.severity));
+  document.querySelector("#improvementMetrics").innerHTML = [
+    metric("Open signals", open.length, "Awaiting Founder prioritization"),
+    metric("Controlled goals", linked.length, "Planning or execution in progress"),
+    metric("Ready to verify", ready.length, "Evidence must confirm the outcome"),
+    metric("High priority", highPriority.length, "High or critical active signals")
+  ].join("");
+  const navCount = document.querySelector("#improvementNavCount");
+  navCount.textContent = open.length;
+  navCount.classList.toggle("hidden", open.length === 0);
+  document.querySelector("#improvementList").innerHTML = state.improvementSignals.length ? state.improvementSignals.map((signal) => {
+    const goal = state.goals.find((item) => item.id === signal.linkedGoalId);
+    const source = signal.sourceType === "founder_report" ? "Founder observation" : `${titleize(signal.sourceType)} · ${signal.sourceId}`;
+    const goalOptions = state.goals.filter((item) => item.status === "active" && item.id !== signal.linkedGoalId).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`).join("");
+    const openActions = signal.status === "open" ? `<div class="improvement-actions"><button class="primary-button" type="button" data-improvement-create-goal="${escapeHtml(signal.id)}">Create controlled improvement goal</button>${goalOptions ? `<details><summary>Link existing work instead</summary><form data-improvement-link-goal="${escapeHtml(signal.id)}"><label>Existing goal<select name="goalId" required><option value="">Select goal</option>${goalOptions}</select></label><button class="secondary-button" type="submit">Link existing goal</button></form></details>` : ""}<details><summary>Dismiss this signal</summary><form data-improvement-dismiss="${escapeHtml(signal.id)}"><label>Decision reason<input name="reason" required maxlength="1000" placeholder="Why this does not require maintenance work" /></label><button class="secondary-button" type="submit">Dismiss signal</button></form></details></div>` : "";
+    const verification = signal.status === "ready_for_verification" ? `<form class="improvement-verification" data-improvement-resolve="${escapeHtml(signal.id)}"><label>Verification evidence<textarea name="evidence" required maxlength="3000" placeholder="Record the observed result, test evidence or destination verification that proves the deficiency is resolved."></textarea></label><button class="primary-button" type="submit">Mark verified and resolved</button></form>` : "";
+    const linkedGoal = goal ? `<button class="text-button" type="button" data-page-link="goals">Linked goal: ${escapeHtml(goal.title)}</button>` : "";
+    const closure = signal.status === "dismissed" ? `<p class="decision-note">Dismissed: ${escapeHtml(signal.decisionReason)}</p>`
+      : signal.status === "superseded" ? `<p class="decision-note">No longer active: ${escapeHtml(signal.decisionReason)}</p>`
+      : signal.status === "resolved" ? `<p class="decision-note">Verified: ${escapeHtml(signal.verificationEvidence)}</p>` : "";
+    return `<article class="improvement-card severity-${escapeHtml(signal.severity)}"><div class="goal-top"><div><span class="section-kicker">${escapeHtml(source)}</span><h3>${escapeHtml(signal.title)}</h3></div><div class="signal-status"><span class="status ${escapeHtml(signal.status)}">${escapeHtml(titleize(signal.status))}</span><span class="severity-badge ${escapeHtml(signal.severity)}">${escapeHtml(signal.severity)}</span></div></div><p>${escapeHtml(signal.summary)}</p><div class="goal-meta"><span>${escapeHtml(titleize(signal.category))}</span><span>${signal.occurrenceCount} observation${signal.occurrenceCount === 1 ? "" : "s"}</span><span>First seen ${escapeHtml(formatTime(signal.firstSeenAt))}</span><span>Last seen ${escapeHtml(formatTime(signal.lastSeenAt))}</span></div>${linkedGoal}${openActions}${verification}${closure}</article>`;
+  }).join("") : empty("No deficiencies have been detected or reported. The loop will continue observing task, review, integration and external-action outcomes.");
+}
+
 function renderReports() {
   const statusCounts = state.tasks.reduce((counts, task) => ({ ...counts, [task.status]: (counts[task.status] || 0) + 1 }), {});
   const totalTasks = state.tasks.length;
@@ -623,6 +656,7 @@ function renderAll() {
   renderAccess();
   renderApprovals();
   renderKnowledge();
+  renderImprovements();
   renderReports();
   renderAudit();
   renderSettings();
@@ -630,11 +664,11 @@ function renderAll() {
 
 async function refreshData({ quiet = false } = {}) {
   try {
-    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation] = await Promise.all([
-      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/founder-actions"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors"), api("/api/ceo/conversation")
+    const [health, agents, goals, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, improvementSignals, ceoConversation] = await Promise.all([
+      api("/api/health"), api("/api/agents"), api("/api/goals"), api("/api/tasks"), api("/api/memories"), api("/api/events"), api("/api/assets"), api("/api/policies"), api("/api/access-requests"), api("/api/staffing-requests"), api("/api/founder-actions"), api("/api/job-templates"), api("/api/projects"), api("/api/integration-requests"), api("/api/external-actions"), api("/api/connectors"), api("/api/improvement-signals"), api("/api/ceo/conversation")
     ]);
     const goalSummaries = await Promise.all(goals.map((goal) => api(`/api/goals/${goal.id}/summary`)));
-    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, ceoConversation });
+    Object.assign(state, { health, agents, goals, goalSummaries, tasks, memories, events, assets, policies, accessRequests, staffingRequests, founderActions, jobTemplates, projects, integrationRequests, externalActions, connectors, improvementSignals, ceoConversation });
     renderAll();
   } catch (error) {
     document.querySelector("#runtimeLabel").textContent = "Connection failed";
@@ -664,6 +698,16 @@ async function createGoalFromCeoMessage(messageId) {
     toast("Goal created. The CEO is preparing a plan for your confirmation.");
     await refreshData({ quiet: true });
     goalUI.openGoal(goal.id);
+  } catch (error) { toast(error.message, true); }
+}
+
+async function createGoalFromImprovement(signalId) {
+  try {
+    const result = await api(`/api/improvement-signals/${signalId}/create-goal`, { method: "POST", body: "{}" });
+    toast("Controlled improvement goal created. The CEO is preparing a plan for your confirmation.");
+    await refreshData({ quiet: true });
+    showPage("goals");
+    goalUI.openGoal(result.goal.id);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -735,6 +779,8 @@ document.addEventListener("click", (event) => {
   if (hireTemplate) openHireForm(hireTemplate.dataset.hireTemplate);
   const ceoGoal = event.target.closest("[data-ceo-create-goal]");
   if (ceoGoal) createGoalFromCeoMessage(ceoGoal.dataset.ceoCreateGoal);
+  const improvementGoal = event.target.closest("[data-improvement-create-goal]");
+  if (improvementGoal) createGoalFromImprovement(improvementGoal.dataset.improvementCreateGoal);
   const routineReview = event.target.closest("[data-resolve-routine-stop]");
   if (routineReview) resolveRoutineStop(routineReview.dataset.resolveRoutineStop);
   const closeForm = event.target.closest("[data-close-form]");
@@ -775,6 +821,7 @@ document.querySelector("#showPolicyFormButton").addEventListener("click", () => 
 document.querySelector("#showTemplateFormButton").addEventListener("click", () => document.querySelector("#templateForm").classList.remove("hidden"));
 document.querySelector("#showRequestFormButton").addEventListener("click", () => document.querySelector("#requestForm").classList.remove("hidden"));
 document.querySelector("#showMemoryFormButton").addEventListener("click", () => document.querySelector("#memoryForm").classList.remove("hidden"));
+document.querySelector("#showImprovementFormButton").addEventListener("click", () => document.querySelector("#improvementForm").classList.remove("hidden"));
 document.querySelector("#refreshAuditButton").addEventListener("click", () => refreshData());
 document.querySelector("#previewPolicyButton").addEventListener("click", previewPolicyImpact);
 
@@ -992,6 +1039,39 @@ document.querySelector("#memoryForm").addEventListener("submit", async (event) =
     toast("Organization knowledge recorded.");
     await refreshData({ quiet: true });
   } catch (error) { toast(error.message, true); }
+});
+
+document.querySelector("#improvementForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await api("/api/improvement-signals", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
+    event.currentTarget.reset();
+    event.currentTarget.classList.add("hidden");
+    toast("Improvement signal recorded. It is visible to the AI CEO but no work has started.");
+    await refreshData({ quiet: true });
+  } catch (error) { toast(error.message, true); }
+});
+
+document.querySelector("#improvementList").addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-improvement-dismiss], [data-improvement-resolve], [data-improvement-link-goal]");
+  if (!form) return;
+  event.preventDefault();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    if (form.dataset.improvementLinkGoal) {
+      await api(`/api/improvement-signals/${form.dataset.improvementLinkGoal}/link-goal`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+      toast("Existing goal linked. The signal will follow its controlled progress.");
+    } else if (form.dataset.improvementDismiss) {
+      await api(`/api/improvement-signals/${form.dataset.improvementDismiss}/dismiss`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+      toast("Improvement signal dismissed with an audit record.");
+    } else {
+      await api(`/api/improvement-signals/${form.dataset.improvementResolve}/resolve`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+      toast("Improvement outcome verified and closed.");
+    }
+    await refreshData({ quiet: true });
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
 });
 
 const date = new Date();

@@ -185,6 +185,17 @@ Legacy tasks without a registered tool may contain a placeholder completion mess
 
 Add new entries under this heading with the date, change, decision, and verification result. Do not grow the product document with temporary debugging details or one-off deployment notes.
 
+## 2026-09-12 — Controlled continuous-improvement loop
+
+- Added a durable improvement backlog for automatic task failures, actionable capability gaps, failed or escalated quality review, code-integration failure, and uncertain external outcomes.
+- Added source-based deduplication, changed-observation counts, severity ordering, audit events, and bounded redaction before signals enter CEO context.
+- Kept expected approval, dependency, budget, and repository-selection gates out of the defect backlog.
+- Added a Founder observation form and explicit actions to create a controlled maintenance goal, dismiss a signal with a reason, or close it with verification evidence.
+- Made the active backlog available in the host-generated CEO snapshot without granting the conversation new tools or mutation authority.
+- Reused existing CEO planning, protected codebase selection, isolated code execution, independent review, test, delivery acceptance, and integration approval controls.
+- Kept remote push, `main` merge, deployment, production canary, automatic rollback, and model-weight updates outside the loop.
+- Added automated tests for deduplication, recurrence, control-gate filtering, redaction, Founder-confirmed goal creation, CEO visibility, dismissal, and evidence-based closure.
+
 ## 2026-09-06 — Durable controlled execution
 
 - Replaced default JSON writes with transactional SQLite WAL state, schema revision metadata, rollback behavior, and one-time legacy JSON import. Runtime database files remain ignored.

@@ -60,6 +60,7 @@ export class CeoChatExecutor {
         "Do not claim to have inspected systems, assets, files, employee conversations, the web, or any information not present in the snapshot. Do not invoke tools, execute work, create employees, change access, send messages, publish, spend money, deploy, or approve anything.",
         "A normal discussion must return suggestedAction.type=none. Only suggest propose_goal when the Founder clearly asks to turn a new outcome into organizational work. A suggestion is not approval and does not start work.",
         "A request to eliminate an active blocker or build a missing organizational capability is a new outcome when no equivalent active goal appears in the snapshot. In that case, propose a focused capability-building goal instead of merely repeating the blocker.",
+        "The continuousImprovement section contains host-detected or Founder-reported deficiencies. Help the Founder prioritize them, distinguish expected approval gates from product defects, and propose a focused improvement goal only when requested. Never claim that a signal is resolved merely because a goal or code change exists; require verification evidence.",
         "Reply in the Founder’s language when practical. Keep the response readable and decision-oriented.",
         JSON.stringify({ ceo: { name: ceo.name, role: ceo.jobType }, history, founderMessage: message, organizationSnapshot: snapshot })
       ].join("\n");

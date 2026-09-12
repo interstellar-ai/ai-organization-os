@@ -33,6 +33,8 @@ Start on **Home** with an ongoing AI CEO conversation. Ask about progress, block
 
 Plan confirmation activates controlled autonomy for the displayed scope and budget. Internal document tasks are independently reviewed and can be revised automatically up to twice. Passing work unlocks accepted dependency handoffs; exceptions return to the Founder. Code deliveries require Founder acceptance and a second exact integration approval before they can enter the tested `codex/integration` branch. Before external work, the organization selects a channel from a bounded catalog, records alternatives, and gives the Founder only the required registration, identity, payment and terms checklist. If that route is unavailable, the Founder records only non-sensitive eligibility constraints and the organization automatically selects the next compatible provider without repeating the rejected route. Configured connectors still require exact-payload approval; providers without an adapter can use an explicitly Founder-attested manual receipt without pretending that an Agent performed the action. After all required work is accepted—and code is integrated—the AI CEO generates a final evidence and outcome report. **New work request** remains available for standalone work. See [Goal planning](docs/GOAL_PLANNING.md), [Controlled autonomy](docs/CONTROLLED_AUTONOMY.md), [Code integration](docs/CODE_INTEGRATION.md), [External connectors](docs/EXTERNAL_CONNECTORS.md), and [Durable runtime](docs/DURABLE_RUNTIME.md).
 
+The **Improvements** page adds a controlled self-maintenance loop. The host automatically deduplicates execution failures, missing capabilities, failed quality reviews, integration failures, and uncertain external outcomes. The Founder may also report an observed deficiency. Signals are visible to the AI CEO, but only a Founder action can turn one into a maintenance goal. Delivery changes a linked signal to ready for verification; recorded evidence is still required before it is closed. See [Controlled continuous improvement](docs/CONTINUOUS_IMPROVEMENT.md).
+
 Run the test suite with:
 
 ```bash
@@ -88,6 +90,11 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before open
 | Prepare an exact external action | `POST /api/tasks/:id/configure-external` |
 | External action history | `GET /api/external-actions` |
 | Approve or reject an external action | `POST /api/external-actions/:id/decision` |
+| Improvement backlog and automatic scan | `GET /api/improvement-signals` |
+| Record a Founder improvement signal | `POST /api/improvement-signals` |
+| Confirm a controlled improvement goal | `POST /api/improvement-signals/:id/create-goal` |
+| Link an existing goal to avoid duplicate work | `POST /api/improvement-signals/:id/link-goal` |
+| Dismiss or verify an improvement | `POST /api/improvement-signals/:id/dismiss`, `POST /api/improvement-signals/:id/resolve` |
 
 The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `solution.design`, `mvp.inspect`, `workflow.validate`, `iteration.record`, `memory.search`, `memory.write`, `task.list`, `goal.list`, `asset.catalog`, `asset.inspect`, `code.codex`, `agent.general`, and `echo`. Tools are registered on an allowlist, and unregistered tools are rejected. Managed model tools run only through assigned running tasks, not the generic tool endpoint. Every completed task requires evidence.
 
@@ -100,6 +107,7 @@ The current tool set includes `goal.plan`, `delivery.review`, `goal.analyze`, `s
 - General execution returns Markdown, text, CSV, or JSON from supplied context. It does not retrieve private assets or memories automatically or directly hold external credentials. Live research, email, CRM creation and webhook publishing run through separate host-controlled connectors after an exact action preview and Founder approval. Image generation remains unconnected.
 - General outputs include file hashes and usage records. These prove that content was returned, not that its claims are correct. Approved plan documents require independent criterion review and may auto-revise twice; standalone and escalated work requires Founder review. Feedback preserves prior versions.
 - Controlled plans enforce a displayed model-invocation budget and automatically generate a final CEO report. Delivery completion remains separate from verified business outcomes.
+- The continuous-improvement observer records and deduplicates actionable failures, capability gaps, review findings, integration failures and uncertain external outcomes. It excludes expected approval and repository-selection gates, gives the CEO a bounded active backlog, and requires Founder confirmation before creating a maintenance goal. A delivered goal remains pending verification until evidence closes the original signal.
 - SQLite WAL storage provides transactional, crash-durable local state and imports legacy JSON. Atomic leased claims prevent two local processes from claiming the same task. It is a strong single-node foundation, not a horizontally scaled multi-tenant database or broker.
 - Live research supports explicit public HTTPS sources and optional Brave Search. Email uses Resend, CRM uses HubSpot, and publishing uses a configured HTTPS webhook. Provider credentials remain server-side environment variables.
 - Ready external stages now create a structured Founder action only after their dependencies are accepted. The action shows the AI-selected provider, decision reasons, alternatives, Founder-only registration steps, and the work the organization retains.
