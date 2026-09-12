@@ -33,6 +33,88 @@ test("the organization selects a channel and asks the Founder only for account s
   assert.match(organization.getTask(publish.id).nextAction, /limited Founder setup checklist/);
 });
 
+test("an incompatible payment account closes Payhip and automatically selects Ko-fi", (t) => {
+  const { organization, publish } = setup(t);
+  const [payhip] = organization.prepareReadyExternalTasks();
+  const result = organization.recordFounderRouteUnavailable(payhip.id, {
+    reason: "payment_account_incompatible",
+    countryCode: "cn",
+    accountType: "personal",
+    paymentRail: "paypal",
+    password: "must-not-be-stored"
+  });
+  assert.equal(result.unavailable.status, "unavailable");
+  assert.deepEqual(result.unavailable.routingFeedback, {
+    reason: "payment_account_incompatible", accountType: "personal", paymentRail: "paypal", countryCode: "CN"
+  });
+  assert.equal(Object.hasOwn(result.unavailable.routingFeedback, "password"), false);
+  assert.equal(result.replacement.recommendation.provider, "Ko-fi");
+  assert.equal(result.replacement.supersedesActionId, payhip.id);
+  assert.deepEqual(result.replacement.recommendation.matchedConstraints, {
+    countryCode: "CN", accountType: "personal", paymentRail: "paypal"
+  });
+  assert.match(result.replacement.recommendation.summary, /personal PayPal account/);
+  assert.equal(organization.getTask(publish.id).founderActionId, result.replacement.id);
+  assert.match(organization.getTask(publish.id).blockedReason, /Payhip is unavailable/);
+  assert.equal(organization.prepareReadyExternalTasks().length, 0, "rerouting must not recreate Payhip");
+  assert.throws(() => organization.recordFounderRouteUnavailable(payhip.id, {
+    reason: "other", accountType: "personal", paymentRail: "paypal"
+  }), /Only a pending Founder action/);
+
+  const completed = organization.completeFounderAction(result.replacement.id, {
+    publicAccountUrl: "https://ko-fi.com/example", registrationComplete: true,
+    identityAndTermsConfirmed: true, paymentReady: true
+  });
+  assert.equal(completed.recommendation.provider, "Ko-fi");
+  assert.equal(organization.getTask(publish.id).externalReadiness.provider, "Ko-fi");
+});
+
+test("successive unavailable routes exhaust the bounded catalog without looping", (t) => {
+  const { organization, publish } = setup(t);
+  const [payhip] = organization.prepareReadyExternalTasks();
+  const kofi = organization.recordFounderRouteUnavailable(payhip.id, {
+    reason: "payment_account_incompatible", accountType: "personal", paymentRail: "paypal"
+  }).replacement;
+  const gumroad = organization.recordFounderRouteUnavailable(kofi.id, {
+    reason: "country_unavailable", accountType: "personal", paymentRail: "paypal"
+  }).replacement;
+  assert.equal(gumroad.recommendation.provider, "Gumroad");
+  const exhausted = organization.recordFounderRouteUnavailable(gumroad.id, {
+    reason: "verification_unavailable", accountType: "personal", paymentRail: "paypal"
+  });
+  assert.equal(exhausted.replacement, null);
+  assert.equal(organization.getTask(publish.id).founderActionId, null);
+  assert.match(organization.getTask(publish.id).nextAction, /research another provider/);
+  assert.equal(organization.prepareReadyExternalTasks().length, 0);
+});
+
+test("a previously unavailable route can be restored without erasing route history", (t) => {
+  const { organization, publish } = setup(t);
+  const [payhip] = organization.prepareReadyExternalTasks();
+  const kofi = organization.recordFounderRouteUnavailable(payhip.id, {
+    reason: "payment_account_incompatible", accountType: "personal", paymentRail: "paypal"
+  }).replacement;
+
+  const result = organization.recoverFounderRoute(payhip.id);
+  assert.equal(result.recovered.recommendation.provider, "Payhip");
+  assert.equal(result.recovered.status, "pending");
+  assert.equal(result.recovered.recoveredFromActionId, payhip.id);
+  assert.equal(result.recovered.supersedesActionId, kofi.id);
+  assert.equal(result.replaced.status, "superseded");
+  assert.equal(organization.list("founderActions").find((item) => item.id === payhip.id).status, "unavailable");
+  assert.equal(organization.getTask(publish.id).founderActionId, result.recovered.id);
+  assert.equal(organization.getTask(publish.id).routeConstraints, null);
+  assert.match(organization.getTask(publish.id).blockedReason, /Payhip is available again/);
+
+  const completed = organization.completeFounderAction(result.recovered.id, {
+    publicAccountUrl: "https://payhip.com/example", registrationComplete: true,
+    identityAndTermsConfirmed: true, paymentReady: true
+  });
+  assert.equal(completed.recommendation.provider, "Payhip");
+  assert.equal(organization.getTask(publish.id).externalReadiness.provider, "Payhip");
+  assert.throws(() => organization.recoverFounderRoute(payhip.id), /completed Founder route/);
+});
+
 test("registration stores only public readiness metadata and unlocks a manual receipt fallback", (t) => {
   const { organization, publish } = setup(t);
   const [action] = organization.prepareReadyExternalTasks();

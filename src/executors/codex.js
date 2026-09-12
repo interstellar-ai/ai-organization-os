@@ -1,10 +1,18 @@
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+
+export function chatGptHttpProviderArgs() {
+  return [
+    "--config", "model_provider=\"ai-org-chatgpt-http\"",
+    "--config", "model_providers.ai-org-chatgpt-http={name=\"AI Organization OS ChatGPT HTTP\",base_url=\"https://chatgpt.com/backend-api/codex\",wire_api=\"responses\",requires_openai_auth=true,supports_websockets=false}"
+  ];
+}
 
 function limitedText(value, maximum = 2_000) {
   const text = String(value || "").trim();
@@ -136,7 +144,8 @@ export class CodexExecutor {
     this.runtimeRoot = path.resolve(options.runtimeRoot || path.join(this.projectRoot, "data", "worktrees"));
     this.processRunner = options.processRunner || runProcess;
     this.timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
-    this.cachedStatus = { provider: "codex-cli", available: false, version: null, reason: "Not checked" };
+    this.providerArgs = options.providerArgs || chatGptHttpProviderArgs();
+    this.cachedStatus = { provider: "codex-cli", available: false, version: null, transport: "https", verifiedAt: null, reason: "Not checked" };
   }
 
   status() {
@@ -156,12 +165,26 @@ export class CodexExecutor {
         cwd: this.projectRoot, env: safeEnvironment(), timeoutMs: 10_000, maxOutputBytes: 64_000
       });
       if (auth.code !== 0) throw new Error("Codex sign-in is required");
-      this.cachedStatus = { provider: "codex-cli", available: true, version: limitedText(result.stdout, 120), reason: null };
+      const probe = await this.processRunner(this.command, [
+        "exec", "--cd", os.tmpdir(), "--skip-git-repo-check", "--sandbox", "read-only",
+        "--ignore-user-config", "--ignore-rules", "--ephemeral", "--json",
+        ...this.providerArgs,
+        "--config", "web_search=\"disabled\"", "--config", "project_doc_max_bytes=0", "--config", "mcp_servers={}",
+        "--color", "never", "Reply with exactly READY."
+      ], {
+        cwd: os.tmpdir(), env: safeEnvironment(), timeoutMs: 60_000, maxOutputBytes: 256_000
+      });
+      const probeEvents = parseJsonLines(probe.stdout);
+      if (probe.code !== 0 || !probeEvents.some((event) => event.type === "turn.completed") || !finalMessage(probeEvents)) {
+        throw new Error(safeErrorMessage(probe.stderr || probe.stdout || "Codex model connection failed", 240));
+      }
+      this.cachedStatus = { provider: "codex-cli", available: true, version: limitedText(result.stdout, 120), transport: "https",
+        verifiedAt: new Date().toISOString(), reason: null };
     } catch (error) {
       const reason = error.code === "ENOENT" || error.message.includes("ENOENT")
         ? "Codex CLI installation is incomplete or unavailable"
         : safeErrorMessage(error.message, 240);
-      this.cachedStatus = { provider: "codex-cli", available: false, version: null, reason };
+      this.cachedStatus = { provider: "codex-cli", available: false, version: null, transport: "https", verifiedAt: null, reason };
     }
     return this.status();
   }
@@ -208,6 +231,7 @@ export class CodexExecutor {
       "--json",
       "--ephemeral",
       "--ignore-user-config",
+      ...this.providerArgs,
       "--config", "sandbox_workspace_write.network_access=false",
       "--color", "never",
       "-"
@@ -230,7 +254,7 @@ export class CodexExecutor {
       provider: "codex-cli",
       sandbox: "workspace-write",
       networkAccess: "disabled",
-      transport: /falling back to HTTP/i.test(result.stderr) ? "https-fallback" : "default",
+      transport: "https",
       worktreeId: task.id,
       changedFiles: changedFilesFromStatus(workspaceStatus),
       workspaceStatus: limitedText(workspaceStatus, 8_000),

@@ -33,7 +33,10 @@ test("Codex executor uses non-interactive workspace sandboxing and returns safe 
     agent: { name: "Software Engineer", jobType: "software_engineer" },
     asset: { name: "Repository", workspacePath: sourceRoot }
   });
-  const codexRun = calls.find((call) => call.command === "codex" && call.args.includes("exec"));
+  const probe = calls.find((call) => call.command === "codex" && call.args.includes("Reply with exactly READY."));
+  assert.ok(probe);
+  assert.ok(probe.args.includes("model_provider=\"ai-org-chatgpt-http\""));
+  const codexRun = calls.find((call) => call.command === "codex" && call.args.includes("exec") && call.args.includes("workspace-write"));
   assert.ok(codexRun);
   assert.equal(codexRun.args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
   assert.equal(codexRun.args.includes("workspace-write"), true);
@@ -45,5 +48,6 @@ test("Codex executor uses non-interactive workspace sandboxing and returns safe 
   assert.equal(result.summary, "Implemented the feature and ran tests.");
   assert.equal(result.worktreeId, "task_safe");
   assert.equal(result.networkAccess, "disabled");
+  assert.equal(result.transport, "https");
   assert.deepEqual(result.usage, { input_tokens: 100, output_tokens: 20 });
 });

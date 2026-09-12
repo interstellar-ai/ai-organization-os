@@ -81,6 +81,7 @@ export class GeneralAgentExecutor {
       if (prompt.length > 300_000) throw new Error("Work context is too large; shorten the brief or previous delivery");
       const args = ["--ask-for-approval", "never", "exec", "--cd", workspace,
         "--skip-git-repo-check", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules", "--ephemeral", "--json",
+        ...(this.runtime.providerArgs || []),
         "--config", "web_search=\"disabled\"", "--config", "project_doc_max_bytes=0",
         "--config", "mcp_servers={}",
         ...["shell_tool", "unified_exec", "plugins", "apps", "browser_use", "computer_use", "multi_agent", "multi_agent_v2", "image_generation", "view_image", "memories", "skill_search"].flatMap((flag) => ["--disable", flag]),

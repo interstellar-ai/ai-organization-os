@@ -26,7 +26,10 @@ export function validateCeoChatResult(value) {
   if (!value || !text(value.reply, 6000) || !value.suggestedAction || typeof value.suggestedAction !== "object") {
     throw new Error("CEO returned an invalid conversation response");
   }
-  if (value.suggestedAction.type === "none" && Object.keys(value.suggestedAction).length === 1) {
+  if (value.suggestedAction.type === "none"
+    && Object.keys(value.suggestedAction).every((key) => ["type", "title", "description"].includes(key))
+    && (!value.suggestedAction.title || !String(value.suggestedAction.title).trim())
+    && (!value.suggestedAction.description || !String(value.suggestedAction.description).trim())) {
     return { reply: value.reply.trim(), suggestedAction: { type: "none" } };
   }
   if (value.suggestedAction.type === "propose_goal" && text(value.suggestedAction.title, 180)
@@ -37,7 +40,7 @@ export function validateCeoChatResult(value) {
 }
 
 export class CeoChatExecutor {
-  constructor({ runtime, processRunner = runProcess, timeoutMs = 120_000 } = {}) {
+  constructor({ runtime, processRunner = runProcess, timeoutMs = 180_000 } = {}) {
     this.runtime = runtime;
     this.processRunner = processRunner;
     this.timeoutMs = timeoutMs;
@@ -56,6 +59,8 @@ export class CeoChatExecutor {
         "You may explain the supplied organization snapshot, discuss strategy, compare options and surface blockers. Treat the snapshot as the only source of operational facts. State when a conclusion is a recommendation rather than an observed fact.",
         "Do not claim to have inspected systems, assets, files, employee conversations, the web, or any information not present in the snapshot. Do not invoke tools, execute work, create employees, change access, send messages, publish, spend money, deploy, or approve anything.",
         "A normal discussion must return suggestedAction.type=none. Only suggest propose_goal when the Founder clearly asks to turn a new outcome into organizational work. A suggestion is not approval and does not start work.",
+        "A request to eliminate an active blocker or build a missing organizational capability is a new outcome when no equivalent active goal appears in the snapshot. In that case, propose a focused capability-building goal instead of merely repeating the blocker.",
+        "The continuousImprovement section contains host-detected or Founder-reported deficiencies. Help the Founder prioritize them, distinguish expected approval gates from product defects, and propose a focused improvement goal only when requested. Never claim that a signal is resolved merely because a goal or code change exists; require verification evidence.",
         "Reply in the Founder’s language when practical. Keep the response readable and decision-oriented.",
         JSON.stringify({ ceo: { name: ceo.name, role: ceo.jobType }, history, founderMessage: message, organizationSnapshot: snapshot })
       ].join("\n");
@@ -63,6 +68,7 @@ export class CeoChatExecutor {
       const args = ["--ask-for-approval", "never", "exec", "--cd", workspace, "--skip-git-repo-check", "--sandbox", "read-only",
         "--ignore-user-config", "--ignore-rules", "--ephemeral", "--json", "--config", "web_search=\"disabled\"", "--config", "project_doc_max_bytes=0",
         "--config", "mcp_servers={}",
+        ...(this.runtime.providerArgs || []),
         ...["shell_tool", "unified_exec", "plugins", "apps", "browser_use", "computer_use", "multi_agent", "multi_agent_v2", "image_generation", "view_image", "memories", "skill_search"].flatMap((flag) => ["--disable", flag]),
         "--output-schema", schemaPath, "--color", "never", "-"];
       const response = await this.processRunner(this.runtime.command, args, {

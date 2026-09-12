@@ -23,7 +23,9 @@ The Founder should not have to research providers or translate a business goal i
 4. separates Founder-only account work from organization work; and
 5. creates a structured Founder action only when the external stage is actually ready.
 
-For a small downloadable product, the current catalog selects Payhip as the default first-sale route. This is a bounded recommendation, not a permanent global ranking. The UI shows the catalog freshness limitation, and fees, country support and provider terms must be revalidated before production use.
+For a small downloadable product, the current catalog starts with Payhip when no eligibility constraints are known. This is a bounded recommendation, not a permanent global ranking. The UI shows the catalog freshness limitation, source links, and the requirement to revalidate fees, country support and provider terms before production use.
+
+If the recommended route cannot be used, the Founder can mark it unavailable and record only a structured reason, an optional two-letter country or region code, the available account type, and the available payment method. The system never asks for an account identifier, email, password, payment credential or identity document. The rejected action becomes immutable route history and the organization selects the next compatible catalog option. A personal-PayPal constraint prioritizes Ko-fi; if later routes are also rejected, the catalog advances without returning to a rejected provider. Exhausting the catalog leaves a specific AI CEO research action instead of another registration request.
 
 Founder-only work is limited to account registration, identity or business verification, payment-account connection, provider terms, secret provisioning, and final approval of consequential actions. Channel comparison, listing preparation, payload construction, verification planning and follow-up remain organization responsibilities.
 

@@ -966,7 +966,11 @@ export class Organization {
         return [{ task, inheritedSetup: priorSetup }];
       }
       const related = snapshot.tasks.filter((item) => item.goalId === task.goalId && item.taskKind === "work" && item.status === "completed");
-      const recommendation = recommendExternalRoute(task, related);
+      const unavailableRoutes = snapshot.founderActions.filter((item) => item.taskId === task.id && item.status === "unavailable");
+      const recommendation = recommendExternalRoute(task, related, {
+        ...(unavailableRoutes.at(-1)?.routingFeedback || {}),
+        excludedProviders: unavailableRoutes.map((item) => item.recommendation.provider)
+      });
       return recommendation ? [{ task, recommendation }] : [];
     });
     const created = [];
@@ -1019,6 +1023,124 @@ export class Organization {
       if (inserted) created.push(action);
     }
     return created;
+  }
+
+  recordFounderRouteUnavailable(actionId, input = {}) {
+    const snapshot = this.store.read();
+    const action = snapshot.founderActions.find((item) => item.id === actionId);
+    if (!action) throw new Error("Founder action not found");
+    if (action.status !== "pending") throw new Error("Only a pending Founder action can be marked unavailable");
+    if (action.actionType !== "external_account_setup") throw new Error("Founder action does not represent external account setup");
+    const allowedReasons = ["payment_account_incompatible", "country_unavailable", "verification_unavailable", "terms_unacceptable", "other"];
+    const reason = required(input.reason, "unavailable reason");
+    if (!allowedReasons.includes(reason)) throw new Error("Unavailable reason is not supported");
+    const accountType = required(input.accountType, "available account type");
+    if (!["personal", "business", "none"].includes(accountType)) throw new Error("Available account type is not supported");
+    const paymentRail = required(input.paymentRail, "available payment method");
+    if (!["paypal", "stripe", "bank", "other", "none"].includes(paymentRail)) throw new Error("Available payment method is not supported");
+    const countryCode = input.countryCode ? required(input.countryCode, "country or region code").toUpperCase() : null;
+    if (countryCode && !/^[A-Z]{2}$/.test(countryCode)) throw new Error("Country or region code must contain two letters");
+    const routingFeedback = { reason, accountType, paymentRail, ...(countryCode ? { countryCode } : {}) };
+    const task = snapshot.tasks.find((item) => item.id === action.taskId);
+    if (!task) throw new Error("Task not found");
+    const related = snapshot.tasks.filter((item) => item.goalId === task.goalId && item.taskKind === "work" && item.status === "completed");
+    const unavailableRoutes = snapshot.founderActions.filter((item) => item.taskId === task.id && item.status === "unavailable");
+    const excludedProviders = [...unavailableRoutes.map((item) => item.recommendation.provider), action.recommendation.provider];
+    const recommendation = recommendExternalRoute(task, related, { ...routingFeedback, excludedProviders });
+    const timestamp = now();
+    const replacement = recommendation ? {
+      id: id("founder_action"), taskId: task.id, goalId: task.goalId, projectId: task.projectId,
+      actionType: "external_account_setup", owner: "Founder", status: "pending",
+      title: `Register and verify ${recommendation.provider}`, recommendation, completion: null,
+      supersedesActionId: action.id, createdAt: timestamp, updatedAt: timestamp
+    } : null;
+    this.store.update((state) => {
+      const current = state.founderActions.find((item) => item.id === actionId);
+      if (!current || current.status !== "pending") throw new Error("Founder action changed before the route could be updated");
+      Object.assign(current, { status: "unavailable", unavailableAt: timestamp, updatedAt: timestamp, routingFeedback,
+        resolution: replacement ? `Replaced by ${recommendation.provider}.` : "No compatible catalog route remains." });
+      if (replacement) state.founderActions.push(replacement);
+      const storedTask = state.tasks.find((item) => item.id === action.taskId);
+      Object.assign(storedTask, {
+        founderActionId: replacement?.id || null,
+        externalIntent: replacement?.recommendation.connectorType || storedTask.externalIntent,
+        routeConstraints: routingFeedback,
+        blockedReason: replacement
+          ? `${action.recommendation.provider} is unavailable. Founder account registration and verification are required for ${recommendation.provider}.`
+          : "No compatible provider remains in the bounded catalog under the recorded account constraints.",
+        nextAction: replacement
+          ? `Complete the limited Founder setup checklist for ${recommendation.provider}; the AI organization has retained the rejected route in its audit history.`
+          : "The AI CEO must research another provider before requesting any further Founder account action.",
+        updatedAt: timestamp
+      });
+      state.events.push({ id: id("event"), type: "founder.route_unavailable", createdAt: timestamp, payload: {
+        founderActionId: actionId, taskId: task.id, provider: action.recommendation.provider,
+        reason, accountType, paymentRail, countryCode
+      } });
+      if (replacement) state.events.push({ id: id("event"), type: "founder.route_reselected", createdAt: timestamp, payload: {
+        priorFounderActionId: actionId, founderActionId: replacement.id, taskId: task.id,
+        priorProvider: action.recommendation.provider, provider: recommendation.provider
+      } });
+      this.syncGoalStatus(state, storedTask.goalId);
+      return state;
+    });
+    return { unavailable: this.list("founderActions").find((item) => item.id === actionId),
+      replacement: replacement ? this.list("founderActions").find((item) => item.id === replacement.id) : null };
+  }
+
+  recoverFounderRoute(actionId) {
+    const action = this.list("founderActions").find((item) => item.id === actionId);
+    if (!action) throw new Error("Founder action not found");
+    if (action.status !== "unavailable") throw new Error("Only an unavailable Founder route can be recovered");
+    const task = this.getTask(action.taskId);
+    if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) {
+      throw new Error("Task is not waiting for an external route");
+    }
+    if (this.list("founderActions").some((item) => item.taskId === task.id && item.status === "completed")) {
+      throw new Error("A completed Founder route already exists for this task");
+    }
+    const active = this.list("founderActions").find((item) => item.id === task.founderActionId && item.status === "pending")
+      || this.list("founderActions").find((item) => item.taskId === task.id && item.status === "pending");
+    const timestamp = now();
+    const recovered = {
+      id: id("founder_action"), taskId: task.id, goalId: task.goalId, projectId: task.projectId,
+      actionType: "external_account_setup", owner: "Founder", status: "pending",
+      title: `Register and verify ${action.recommendation.provider}`, recommendation: action.recommendation, completion: null,
+      recoveredFromActionId: action.id, ...(active ? { supersedesActionId: active.id } : {}),
+      createdAt: timestamp, updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      const original = state.founderActions.find((item) => item.id === actionId);
+      if (!original || original.status !== "unavailable") throw new Error("Founder route changed before it could be recovered");
+      const currentActive = active ? state.founderActions.find((item) => item.id === active.id) : null;
+      if (active && (!currentActive || currentActive.status !== "pending")) {
+        throw new Error("Current Founder route changed before it could be replaced");
+      }
+      if (currentActive) Object.assign(currentActive, {
+        status: "superseded", updatedAt: timestamp,
+        resolution: `Replaced after the Founder confirmed ${action.recommendation.provider} became available.`
+      });
+      state.founderActions.push(recovered);
+      const storedTask = state.tasks.find((item) => item.id === task.id);
+      Object.assign(storedTask, {
+        founderActionId: recovered.id,
+        externalIntent: recovered.recommendation.connectorType,
+        routeConstraints: null,
+        blockedReason: `${recovered.recommendation.provider} is available again. Founder account readiness must be confirmed before publication preparation continues.`,
+        nextAction: `Confirm the limited Founder setup checklist for ${recovered.recommendation.provider}; the earlier route decision remains in the audit history.`,
+        updatedAt: timestamp
+      });
+      state.events.push({ id: id("event"), type: "founder.route_recovered", createdAt: timestamp, payload: {
+        priorFounderActionId: action.id, replacedFounderActionId: active?.id || null,
+        founderActionId: recovered.id, taskId: task.id, provider: recovered.recommendation.provider
+      } });
+      this.syncGoalStatus(state, storedTask.goalId);
+      return state;
+    });
+    return {
+      recovered: this.list("founderActions").find((item) => item.id === recovered.id),
+      replaced: active ? this.list("founderActions").find((item) => item.id === active.id) : null
+    };
   }
 
   completeFounderAction(actionId, input = {}, connectors = null) {

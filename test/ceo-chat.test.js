@@ -50,12 +50,34 @@ test("a CEO goal suggestion creates a goal only after Founder confirmation", asy
   assert.throws(() => chat.createGoalFromSuggestion(result.ceoMessage.id), /already been used/);
 });
 
+test("CEO snapshot includes safe external account readiness and the active adapter blocker", (t) => {
+  const { organization, chat, goal } = setup(t);
+  const employee = organization.list("agents").find((agent) => agent.jobType === "product_manager");
+  const publish = organization.createTask({ goalId: goal.id, title: "Publish a digital product on Payhip",
+    assignedAgentId: employee.id, executionMode: "external", status: "blocked" });
+  const [action] = organization.prepareReadyExternalTasks();
+  organization.completeFounderAction(action.id, {
+    publicAccountUrl: "https://payhip.com/example", registrationComplete: true,
+    identityAndTermsConfirmed: true, paymentReady: true
+  });
+
+  const snapshot = chat.snapshot();
+  assert.equal(snapshot.externalReadiness.at(-1).provider, "Payhip");
+  assert.equal(snapshot.externalReadiness.at(-1).status, "completed");
+  assert.equal(snapshot.externalReadiness.at(-1).publicAccountUrl, "https://payhip.com/example");
+  assert.match(snapshot.activeTasks.find((task) => task.id === publish.id).blocker, /no scoped provider adapter/);
+  assert.equal(JSON.stringify(snapshot).includes("password"), false);
+});
+
 test("CEO chat validates the provider contract and disables all local tools", async (t) => {
   assert.throws(() => validateCeoChatResult({ reply: "Hello", suggestedAction: { type: "propose_goal", title: "Only a title" } }), /invalid/);
+  assert.deepEqual(validateCeoChatResult({ reply: "Ready", suggestedAction: { type: "none", title: "", description: "" } }), {
+    reply: "Ready", suggestedAction: { type: "none" }
+  });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-org-ceo-executor-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const calls = [];
-  const executor = new CeoChatExecutor({ runtime: { command: "codex", status: () => ({ available: true }) }, processRunner: async (command, args, options) => {
+  const executor = new CeoChatExecutor({ runtime: { command: "codex", providerArgs: ["--config", "model_provider=\"test-http\""], status: () => ({ available: true }) }, processRunner: async (command, args, options) => {
     calls.push({ command, args, options });
     return { code: 0, stderr: "", stdout: [
       { type: "item.completed", item: { type: "agent_message", text: JSON.stringify({ reply: "Current work is visible in the supplied snapshot.", suggestedAction: { type: "none" } }) } },
@@ -67,6 +89,7 @@ test("CEO chat validates the provider contract and disables all local tools", as
   assert.ok(calls[0].args.includes("read-only"));
   assert.ok(calls[0].args.includes("web_search=\"disabled\""));
   assert.ok(calls[0].args.includes("--output-schema"));
+  assert.ok(calls[0].args.includes("model_provider=\"test-http\""));
   assert.match(calls[0].options.input, /organizationSnapshot/);
   assert.equal(fs.existsSync(calls[0].options.cwd), false);
 });

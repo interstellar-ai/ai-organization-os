@@ -13,6 +13,7 @@ import { GeneralAgentExecutor } from "./executors/general.js";
 import { CeoChatExecutor } from "./executors/ceo-chat.js";
 import { ExecutiveChat } from "./executive-chat.js";
 import { GoalWorkflow } from "./goal-workflow.js";
+import { ImprovementLoop } from "./improvement-loop.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(root, "..");
@@ -32,7 +33,9 @@ const tools = createDefaultTools(organization, { codexExecutor, generalExecutor 
 organization.tools = tools;
 const workflow = new GoalWorkflow(organization, generalExecutor, () => ({ generalAvailable: generalExecutor.status().available, codexAvailable: codexExecutor.status().available }));
 workflow.registerTool();
-const executiveChat = new ExecutiveChat(organization, ceoChatExecutor);
+const improvementLoop = new ImprovementLoop(organization);
+improvementLoop.scan();
+const executiveChat = new ExecutiveChat(organization, ceoChatExecutor, improvementLoop);
 const scheduler = new Scheduler(organization);
 
 function seed() {
@@ -184,6 +187,8 @@ store.update((state) => state);
 organization.recoverInterruptedTasks();
 organization.recoverInterruptedExternalActions();
 scheduler.start();
+const improvementTimer = setInterval(() => improvementLoop.scan(), 5000);
+improvementTimer.unref();
 
 const json = (response, status, payload) => {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -218,7 +223,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/goal-ui.js") return serveStatic(response, "goal-ui.js", "text/javascript; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json(response, 200, { ok: true, service: "ai-organization-os", version: "0.9.0", storage: store instanceof SqliteStore ? "sqlite-wal" : "json",
-        scheduler: "durable-leased", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status(), ceoChat: ceoChatExecutor.status(), connectors: connectors.list() });
+        scheduler: "durable-leased", toolCount: tools.list().length, codex: codexExecutor.status(), generalAgent: generalExecutor.status(), ceoChat: ceoChatExecutor.status(), connectors: connectors.list(), continuousImprovement: improvementLoop.summary() });
     }
     if (request.method === "GET" && url.pathname === "/api/codex/status") return json(response, 200, codexExecutor.status());
     if (request.method === "GET" && url.pathname === "/api/ceo/conversation") return json(response, 200, executiveChat.conversation());
@@ -256,6 +261,7 @@ async function route(request, response) {
     if (request.method === "GET" && url.pathname === "/api/integration-requests") return json(response, 200, organization.list("integrationRequests"));
     if (request.method === "GET" && url.pathname === "/api/external-actions") return json(response, 200, organization.list("externalActions"));
     if (request.method === "GET" && url.pathname === "/api/connectors") return json(response, 200, connectors.list());
+    if (request.method === "GET" && url.pathname === "/api/improvement-signals") return json(response, 200, improvementLoop.scan().signals);
     if (request.method === "GET" && url.pathname === "/api/job-templates") {
       return json(response, 200, organization.list("jobTemplates"));
     }
@@ -269,6 +275,14 @@ async function route(request, response) {
       return json(response, 201, executiveChat.createGoalFromSuggestion(parts[4]));
     }
     if (request.method === "POST" && url.pathname === "/api/goals") return json(response, 201, organization.createGoal(await body(request)));
+    if (request.method === "POST" && url.pathname === "/api/improvement-signals") return json(response, 201, improvementLoop.report(await body(request)));
+    if (request.method === "POST" && parts[1] === "improvement-signals" && parts[3] === "create-goal") {
+      const result = improvementLoop.createGoal(parts[2]);
+      return json(response, 201, { ...result, planningTask: workflow.startPlanning(result.goal.id, {}) });
+    }
+    if (request.method === "POST" && parts[1] === "improvement-signals" && parts[3] === "link-goal") return json(response, 200, improvementLoop.linkGoal(parts[2], await body(request)));
+    if (request.method === "POST" && parts[1] === "improvement-signals" && parts[3] === "dismiss") return json(response, 200, improvementLoop.dismiss(parts[2], await body(request)));
+    if (request.method === "POST" && parts[1] === "improvement-signals" && parts[3] === "resolve") return json(response, 200, improvementLoop.resolve(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && ["plan", "replan"].includes(parts[3])) return json(response, 201, workflow.startPlanning(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "approve-plan") return json(response, 200, workflow.approvePlan(parts[2], await body(request)));
     if (request.method === "POST" && parts[1] === "goals" && parts[3] === "extend-budget") return json(response, 200, workflow.extendBudget(parts[2], await body(request)));
@@ -321,6 +335,12 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "complete") {
       return json(response, 200, organization.completeFounderAction(parts[2], await body(request), connectors));
     }
+    if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "unavailable") {
+      return json(response, 200, organization.recordFounderRouteUnavailable(parts[2], await body(request)));
+    }
+    if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "recover") {
+      return json(response, 200, organization.recoverFounderRoute(parts[2]));
+    }
     if (request.method === "POST" && parts[1] === "integration-requests" && parts[3] === "decision") {
       return json(response, 200, await organization.decideCodeIntegration(parts[2], await body(request), codeIntegrationExecutor));
     }
@@ -338,7 +358,7 @@ async function route(request, response) {
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {
-    const status = /required|not found|dependencies|Unknown tool|executor|evidence|authorization|identity|access scope|budget|model runs|controlled autonomy|selected task|cumulative/i.test(error.message) ? 400 : 500;
+    const status = /required|not found|dependencies|Unknown tool|executor|evidence|authorization|identity|access scope|budget|model runs|controlled autonomy|selected task|cumulative|improvement signal|improvement work/i.test(error.message) ? 400 : 500;
     return json(response, status, { error: error.message });
   }
 }
@@ -352,6 +372,7 @@ server.listen(port, "127.0.0.1", () => {
 });
 
 const shutdown = () => {
+  clearInterval(improvementTimer);
   scheduler.stop();
   server.close(() => {
     store.close?.();

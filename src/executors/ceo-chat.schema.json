@@ -5,24 +5,14 @@
   "properties": {
     "reply": { "type": "string", "minLength": 1, "maxLength": 6000 },
     "suggestedAction": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type"],
-          "properties": { "type": { "const": "none" } }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "title", "description"],
-          "properties": {
-            "type": { "const": "propose_goal" },
-            "title": { "type": "string", "minLength": 1, "maxLength": 180 },
-            "description": { "type": "string", "minLength": 1, "maxLength": 12000 }
-          }
-        }
-      ]
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title", "description"],
+      "properties": {
+        "type": { "type": "string", "enum": ["none", "propose_goal"] },
+        "title": { "type": "string", "maxLength": 180 },
+        "description": { "type": "string", "maxLength": 12000 }
+      }
     }
   }
 }

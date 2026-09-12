@@ -16,7 +16,8 @@ export const EMPTY_STATE = {
   founderActions: [],
   jobTemplates: [],
   integrationRequests: [],
-  externalActions: []
+  externalActions: [],
+  improvementSignals: []
 };
 
 export function normalizeState(input) {
@@ -45,6 +46,7 @@ export function normalizeState(input) {
   state.jobTemplates = Array.isArray(state.jobTemplates) ? state.jobTemplates : [];
   state.integrationRequests = Array.isArray(state.integrationRequests) ? state.integrationRequests : [];
   state.externalActions = Array.isArray(state.externalActions) ? state.externalActions : [];
+  state.improvementSignals = Array.isArray(state.improvementSignals) ? state.improvementSignals : [];
 
   state.agents = state.agents.map((agent) => ({
     templateId: null,
