@@ -324,6 +324,9 @@ async function route(request, response) {
     if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "unavailable") {
       return json(response, 200, organization.recordFounderRouteUnavailable(parts[2], await body(request)));
     }
+    if (request.method === "POST" && parts[1] === "founder-actions" && parts[3] === "recover") {
+      return json(response, 200, organization.recoverFounderRoute(parts[2]));
+    }
     if (request.method === "POST" && parts[1] === "integration-requests" && parts[3] === "decision") {
       return json(response, 200, await organization.decideCodeIntegration(parts[2], await body(request), codeIntegrationExecutor));
     }

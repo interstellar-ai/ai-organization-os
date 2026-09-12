@@ -1088,6 +1088,61 @@ export class Organization {
       replacement: replacement ? this.list("founderActions").find((item) => item.id === replacement.id) : null };
   }
 
+  recoverFounderRoute(actionId) {
+    const action = this.list("founderActions").find((item) => item.id === actionId);
+    if (!action) throw new Error("Founder action not found");
+    if (action.status !== "unavailable") throw new Error("Only an unavailable Founder route can be recovered");
+    const task = this.getTask(action.taskId);
+    if (task.executionMode !== "external" || !["blocked", "failed"].includes(task.status)) {
+      throw new Error("Task is not waiting for an external route");
+    }
+    if (this.list("founderActions").some((item) => item.taskId === task.id && item.status === "completed")) {
+      throw new Error("A completed Founder route already exists for this task");
+    }
+    const active = this.list("founderActions").find((item) => item.id === task.founderActionId && item.status === "pending")
+      || this.list("founderActions").find((item) => item.taskId === task.id && item.status === "pending");
+    const timestamp = now();
+    const recovered = {
+      id: id("founder_action"), taskId: task.id, goalId: task.goalId, projectId: task.projectId,
+      actionType: "external_account_setup", owner: "Founder", status: "pending",
+      title: `Register and verify ${action.recommendation.provider}`, recommendation: action.recommendation, completion: null,
+      recoveredFromActionId: action.id, ...(active ? { supersedesActionId: active.id } : {}),
+      createdAt: timestamp, updatedAt: timestamp
+    };
+    this.store.update((state) => {
+      const original = state.founderActions.find((item) => item.id === actionId);
+      if (!original || original.status !== "unavailable") throw new Error("Founder route changed before it could be recovered");
+      const currentActive = active ? state.founderActions.find((item) => item.id === active.id) : null;
+      if (active && (!currentActive || currentActive.status !== "pending")) {
+        throw new Error("Current Founder route changed before it could be replaced");
+      }
+      if (currentActive) Object.assign(currentActive, {
+        status: "superseded", updatedAt: timestamp,
+        resolution: `Replaced after the Founder confirmed ${action.recommendation.provider} became available.`
+      });
+      state.founderActions.push(recovered);
+      const storedTask = state.tasks.find((item) => item.id === task.id);
+      Object.assign(storedTask, {
+        founderActionId: recovered.id,
+        externalIntent: recovered.recommendation.connectorType,
+        routeConstraints: null,
+        blockedReason: `${recovered.recommendation.provider} is available again. Founder account readiness must be confirmed before publication preparation continues.`,
+        nextAction: `Confirm the limited Founder setup checklist for ${recovered.recommendation.provider}; the earlier route decision remains in the audit history.`,
+        updatedAt: timestamp
+      });
+      state.events.push({ id: id("event"), type: "founder.route_recovered", createdAt: timestamp, payload: {
+        priorFounderActionId: action.id, replacedFounderActionId: active?.id || null,
+        founderActionId: recovered.id, taskId: task.id, provider: recovered.recommendation.provider
+      } });
+      this.syncGoalStatus(state, storedTask.goalId);
+      return state;
+    });
+    return {
+      recovered: this.list("founderActions").find((item) => item.id === recovered.id),
+      replaced: active ? this.list("founderActions").find((item) => item.id === active.id) : null
+    };
+  }
+
   completeFounderAction(actionId, input = {}, connectors = null) {
     const action = this.list("founderActions").find((item) => item.id === actionId);
     if (!action) throw new Error("Founder action not found");
